@@ -198,56 +198,17 @@ const Pages = {
         SEO.clearJsonLd();
         SEO.updateMeta({
             title: pageTitle,
-            description: `Browse verified ${selectedDept || 'film & television'} professionals on Screenshoe. Discover actors, directors, writers, producers, and crew from Hollywood and worldwide.`,
+            description: `Browse ${selectedDept || 'film & television'} professionals on Screenshoe. Discover actors, directors, writers, producers, and crew from Hollywood and worldwide.`,
             url: `https://screenshoe.com/discover${department ? '/' + department : ''}`
         });
         SEO.setRobots('index,follow');
 
-        let people = [];
-        try {
-            // Fetch multiple pages to ensure all departments have results
-            const pagesToFetch = selectedDept ? 10 : 3;
-            const fetches = [];
-            for (let i = 1; i <= pagesToFetch; i++) {
-                fetches.push(API.getPopularPeople(i));
-            }
-            const pages = await Promise.all(fetches);
-            const allPeople = pages.flatMap(p => p.results || []);
-
-            // Deduplicate by id
-            const seen = new Set();
-            people = allPeople.filter(p => {
-                if (seen.has(p.id)) return false;
-                seen.add(p.id);
-                return true;
-            });
-
-            // Filter by department if specified
-            if (selectedDept) {
-                people = people.filter(p =>
-                    p.known_for_department?.toLowerCase() === selectedDept.toLowerCase()
-                );
-            }
-        } catch (e) {
-            console.warn('Failed to load people:', e);
-        }
-
-        // Also check for verified profiles in Firestore
-        let verifiedIds = new Set();
-        if (db) {
-            try {
-                const snap = await db.collection('ss_profiles')
-                    .where('verified', '==', true)
-                    .get();
-                snap.docs.forEach(d => verifiedIds.add(Number(d.id)));
-            } catch (e) {}
-        }
-
-        // Mark verified people
-        people = people.map(p => ({
-            ...p,
-            verified: verifiedIds.has(p.id)
-        }));
+        // Store state for pagination & search
+        window._discoverDept = department;
+        window._discoverPage = 1;
+        window._discoverQuery = '';
+        window._discoverLoading = false;
+        window._discoverHasMore = true;
 
         const deptFilters = [
             { slug: '', label: 'All' },
@@ -261,19 +222,14 @@ const Pages = {
             { slug: 'editing', label: 'Editing' },
         ];
 
-        // Store for live search
-        window._discoverPeople = people;
-        window._discoverDept = department;
-
         return `
             <div class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
                 <h1 class="page-title">Discover</h1>
-                <p class="text-secondary" style="margin-bottom:var(--spacing-lg)">Browse film & television professionals</p>
+                <p class="text-secondary" style="margin-bottom:var(--spacing-lg)">Every person in film & television has a profile. Search for anyone.</p>
 
-                <div class="discover-search" style="margin-bottom:var(--spacing-lg)">
-                    <input type="text" id="discover-search-input" class="form-input"
-                        placeholder="Search for anyone in film & TV..." autocomplete="off"
-                        style="width:100%;max-width:100%">
+                <div class="discover-search" style="margin-bottom:var(--spacing-md)">
+                    <input type="text" id="discover-search-input" class="form-input form-input-lg"
+                        placeholder="Search by name — actors, directors, writers, crew..." autocomplete="off">
                 </div>
 
                 <div class="discover-filters">
@@ -286,17 +242,14 @@ const Pages = {
                 </div>
 
                 <div id="discover-results">
-                    ${people.length > 0 ? `
-                        <div class="person-card-grid">
-                            ${people.map(p => Components.personCard(p)).join('')}
-                        </div>
-                    ` : `
-                        ${Components.emptyState('🔍', 'No results', 'Try a different department or check back later.')}
-                    `}
+                    <div class="spinner" style="margin:2rem auto"></div>
                 </div>
-                <p class="text-tertiary text-center" style="margin-top:var(--spacing-lg);font-size:0.8rem">
-                    Showing ${people.length} professionals${selectedDept ? ` in ${selectedDept}` : ''}. Search above to find anyone in our database of 1M+ film & TV professionals.
-                </p>
+
+                <div id="discover-load-more" style="text-align:center;margin-top:var(--spacing-lg);display:none">
+                    <button class="btn btn-secondary" onclick="Pages._discoverLoadMore()">Load More</button>
+                </div>
+
+                <div id="discover-status" class="text-tertiary text-center" style="margin-top:var(--spacing-md);font-size:0.8rem"></div>
             </div>
         `;
     },
@@ -677,6 +630,158 @@ const Pages = {
         }
 
         container.innerHTML = this.ssRenderFilmographyGrid(credits);
+    },
+
+    // ==========================================
+    // DISCOVER PAGE HELPERS
+    // ==========================================
+
+    _deptMap: {
+        'acting': 'Acting', 'directing': 'Directing', 'writing': 'Writing',
+        'production': 'Production', 'sound': 'Sound', 'camera': 'Camera',
+        'art': 'Art', 'editing': 'Editing'
+    },
+
+    _filterByDept(people) {
+        const dept = window._discoverDept;
+        if (!dept || !this._deptMap[dept]) return people;
+        return people.filter(p =>
+            p.known_for_department?.toLowerCase() === this._deptMap[dept].toLowerCase()
+        );
+    },
+
+    async _discoverLoadInitial() {
+        const resultsEl = document.getElementById('discover-results');
+        const statusEl = document.getElementById('discover-status');
+        const loadMoreBtn = document.getElementById('discover-load-more');
+        if (!resultsEl) return;
+
+        resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
+
+        try {
+            // Fetch 5 pages of popular people (100 people)
+            const fetches = [];
+            for (let i = 1; i <= 5; i++) fetches.push(API.getPopularPeople(i));
+            const pages = await Promise.all(fetches);
+            let allPeople = pages.flatMap(p => p.results || []);
+
+            // Deduplicate
+            const seen = new Set();
+            allPeople = allPeople.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+
+            // Filter by department
+            let people = this._filterByDept(allPeople);
+
+            // Store for load more
+            window._discoverAllPeople = people;
+            window._discoverPopularPage = 5;
+
+            resultsEl.innerHTML = people.length > 0
+                ? `<div class="person-card-grid">${people.map(p => Components.personCard(p)).join('')}</div>`
+                : Components.emptyState('🔍', 'No results', 'Try searching above or selecting a different department.');
+
+            if (statusEl) statusEl.textContent = `Showing ${people.length} popular ${this._deptMap[window._discoverDept] || ''} professionals. Search above to find anyone from TMDB's database of 3M+ people.`;
+            if (loadMoreBtn) loadMoreBtn.style.display = people.length >= 10 ? 'block' : 'none';
+        } catch (e) {
+            resultsEl.innerHTML = Components.emptyState('⚠️', 'Failed to load', 'Please refresh and try again.');
+        }
+    },
+
+    async _discoverSearch(query, page = 1, append = false) {
+        const resultsEl = document.getElementById('discover-results');
+        const statusEl = document.getElementById('discover-status');
+        const loadMoreBtn = document.getElementById('discover-load-more');
+        if (!resultsEl) return;
+        if (window._discoverLoading) return;
+        window._discoverLoading = true;
+
+        if (!append) {
+            resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
+        }
+
+        try {
+            // Fetch 3 pages at once to get more results
+            const fetches = [];
+            for (let i = page; i < page + 3; i++) fetches.push(API.searchPeople(query, i));
+            const pages = await Promise.all(fetches);
+            let results = pages.flatMap(p => p.results || []);
+            const totalResults = pages[0]?.total_results || 0;
+            const totalPages = pages[0]?.total_pages || 0;
+
+            // Deduplicate
+            const seen = new Set();
+            results = results.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+
+            // Filter by department if active
+            results = this._filterByDept(results);
+
+            window._discoverPage = page + 3;
+            window._discoverHasMore = (page + 3) <= totalPages;
+
+            if (append) {
+                const grid = resultsEl.querySelector('.person-card-grid');
+                if (grid) {
+                    grid.insertAdjacentHTML('beforeend', results.map(p => Components.personCard(p)).join(''));
+                }
+            } else {
+                resultsEl.innerHTML = results.length > 0
+                    ? `<div class="person-card-grid">${results.map(p => Components.personCard(p)).join('')}</div>`
+                    : Components.emptyState('🔍', 'No results', `No ${this._deptMap[window._discoverDept] || ''} professionals found for "${query}". Try a different name or department.`);
+            }
+
+            const deptLabel = this._deptMap[window._discoverDept] || '';
+            if (statusEl) statusEl.textContent = totalResults > 0
+                ? `Found ${totalResults.toLocaleString()} results for "${query}"${deptLabel ? ` in ${deptLabel}` : ''}`
+                : '';
+            if (loadMoreBtn) loadMoreBtn.style.display = (results.length > 0 && window._discoverHasMore) ? 'block' : 'none';
+        } catch (e) {
+            if (!append) resultsEl.innerHTML = Components.emptyState('⚠️', 'Search failed', 'Please try again.');
+        }
+        window._discoverLoading = false;
+    },
+
+    _discoverLoadMore() {
+        const query = window._discoverQuery;
+        if (query && query.length >= 2) {
+            this._discoverSearch(query, window._discoverPage, true);
+        } else {
+            // Load more popular people
+            this._discoverLoadMorePopular();
+        }
+    },
+
+    async _discoverLoadMorePopular() {
+        const resultsEl = document.getElementById('discover-results');
+        const loadMoreBtn = document.getElementById('discover-load-more');
+        if (!resultsEl || window._discoverLoading) return;
+        window._discoverLoading = true;
+
+        const nextPage = (window._discoverPopularPage || 5) + 1;
+        try {
+            const fetches = [];
+            for (let i = nextPage; i < nextPage + 5; i++) fetches.push(API.getPopularPeople(i));
+            const pages = await Promise.all(fetches);
+            let newPeople = pages.flatMap(p => p.results || []);
+
+            const existing = new Set((window._discoverAllPeople || []).map(p => p.id));
+            newPeople = newPeople.filter(p => !existing.has(p.id));
+            newPeople = this._filterByDept(newPeople);
+
+            window._discoverPopularPage = nextPage + 4;
+            window._discoverAllPeople = [...(window._discoverAllPeople || []), ...newPeople];
+
+            const grid = resultsEl.querySelector('.person-card-grid');
+            if (grid && newPeople.length > 0) {
+                grid.insertAdjacentHTML('beforeend', newPeople.map(p => Components.personCard(p)).join(''));
+            }
+
+            const statusEl = document.getElementById('discover-status');
+            if (statusEl) statusEl.textContent = `Showing ${window._discoverAllPeople.length} professionals. Search above to find anyone.`;
+            if (loadMoreBtn) loadMoreBtn.style.display = newPeople.length > 0 ? 'block' : 'none';
+        } catch (e) {
+            console.warn('Failed to load more:', e);
+        }
+        window._discoverLoading = false;
     },
 
     // ==========================================
@@ -1353,41 +1458,27 @@ Pages._afterRender = {
         }
     },
 
-    // Discover page: live search
+    // Discover page: search, filter, paginate
     discover: () => {
+        // Load initial popular people
+        Pages._discoverLoadInitial();
+
         const input = document.getElementById('discover-search-input');
         if (!input) return;
         let debounce;
         input.addEventListener('input', () => {
             clearTimeout(debounce);
-            debounce = setTimeout(async () => {
+            debounce = setTimeout(() => {
                 const query = input.value.trim();
-                const resultsEl = document.getElementById('discover-results');
-                if (!resultsEl) return;
+                window._discoverQuery = query;
+                window._discoverPage = 1;
+                window._discoverHasMore = true;
 
                 if (query.length < 2) {
-                    // Show default people
-                    const people = window._discoverPeople || [];
-                    resultsEl.innerHTML = people.length > 0
-                        ? `<div class="person-card-grid">${people.map(p => Components.personCard(p)).join('')}</div>`
-                        : Components.emptyState('🔍', 'No results', 'Try a different department.');
-                    return;
-                }
-
-                resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
-                try {
-                    const data = await API.searchPeople(query);
-                    let results = data.results || [];
-                    const dept = window._discoverDept;
-                    const deptMap = { 'acting': 'Acting', 'directing': 'Directing', 'writing': 'Writing', 'production': 'Production', 'sound': 'Sound', 'camera': 'Camera', 'art': 'Art', 'editing': 'Editing' };
-                    if (dept && deptMap[dept]) {
-                        results = results.filter(p => p.known_for_department?.toLowerCase() === deptMap[dept].toLowerCase());
-                    }
-                    resultsEl.innerHTML = results.length > 0
-                        ? `<div class="person-card-grid">${results.map(p => Components.personCard(p)).join('')}</div>`
-                        : Components.emptyState('🔍', 'No results', `No ${deptMap[dept] || ''} professionals found for "${query}". Try a different search.`);
-                } catch (e) {
-                    resultsEl.innerHTML = Components.emptyState('⚠️', 'Search failed', 'Please try again.');
+                    // Reset to popular people
+                    Pages._discoverLoadInitial();
+                } else {
+                    Pages._discoverSearch(query, 1, false);
                 }
             }, 300);
         });

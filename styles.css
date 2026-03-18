@@ -2354,6 +2354,12 @@ p {
   border-color: var(--brand-accent);
 }
 
+.form-input-lg {
+  padding: var(--spacing-md);
+  font-size: 1.1rem;
+  border-radius: var(--radius-lg);
+}
+
 .form-error {
   color: var(--danger);
   font-size: 0.8rem;
