@@ -222,10 +222,36 @@ const Pages = {
             { slug: 'editing', label: 'Editing' },
         ];
 
-        // Sort/view options
+        // Sort/view/filter options
         window._discoverSort = 'popularity';
         window._discoverGender = 'all';
         window._discoverView = 'grid';
+        window._discoverGenre = 'all';
+        window._discoverMedia = 'all';
+        window._discoverTier = 'all';
+
+        // Genre map (TMDB genre IDs → labels)
+        const genreOptions = [
+            { value: 'all', label: 'All Genres' },
+            { value: '28', label: 'Action' },
+            { value: '12', label: 'Adventure' },
+            { value: '16', label: 'Animation' },
+            { value: '35', label: 'Comedy' },
+            { value: '80', label: 'Crime' },
+            { value: '99', label: 'Documentary' },
+            { value: '18', label: 'Drama' },
+            { value: '10751', label: 'Family' },
+            { value: '14', label: 'Fantasy' },
+            { value: '36', label: 'History' },
+            { value: '27', label: 'Horror' },
+            { value: '10402', label: 'Music' },
+            { value: '9648', label: 'Mystery' },
+            { value: '10749', label: 'Romance' },
+            { value: '878', label: 'Sci-Fi' },
+            { value: '53', label: 'Thriller' },
+            { value: '10752', label: 'War' },
+            { value: '37', label: 'Western' },
+        ];
 
         return `
             <div class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
@@ -248,21 +274,45 @@ const Pages = {
 
                 <div class="discover-toolbar">
                     <div class="discover-toolbar-left">
-                        <div class="discover-sort">
-                            <label>Sort:</label>
+                        <div class="discover-filter-group">
+                            <label>Sort</label>
                             <select id="discover-sort-select" class="form-select" onchange="Pages._discoverSetSort(this.value)">
                                 <option value="popularity">Popularity</option>
                                 <option value="name-az">Name A→Z</option>
                                 <option value="name-za">Name Z→A</option>
                             </select>
                         </div>
-                        <div class="discover-gender-filter">
-                            <label>Gender:</label>
+                        <div class="discover-filter-group">
+                            <label>Gender</label>
                             <select id="discover-gender-select" class="form-select" onchange="Pages._discoverSetGender(this.value)">
                                 <option value="all">All</option>
                                 <option value="female">Female</option>
                                 <option value="male">Male</option>
                                 <option value="other">Non-Binary</option>
+                            </select>
+                        </div>
+                        <div class="discover-filter-group">
+                            <label>Genre</label>
+                            <select id="discover-genre-select" class="form-select" onchange="Pages._discoverSetGenre(this.value)">
+                                ${genreOptions.map(g => `<option value="${g.value}">${g.label}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="discover-filter-group">
+                            <label>Media</label>
+                            <select id="discover-media-select" class="form-select" onchange="Pages._discoverSetMedia(this.value)">
+                                <option value="all">Film & TV</option>
+                                <option value="movie">Film Only</option>
+                                <option value="tv">TV Only</option>
+                            </select>
+                        </div>
+                        <div class="discover-filter-group">
+                            <label>Tier</label>
+                            <select id="discover-tier-select" class="form-select" onchange="Pages._discoverSetTier(this.value)">
+                                <option value="all">All Tiers</option>
+                                <option value="a-list">A-List (25+)</option>
+                                <option value="established">Established (15–25)</option>
+                                <option value="working">Working Pro (5–15)</option>
+                                <option value="emerging">Emerging (&lt;5)</option>
                             </select>
                         </div>
                     </div>
@@ -271,6 +321,8 @@ const Pages = {
                         <button class="discover-view-btn ${window._discoverView === 'list' ? 'active' : ''}" onclick="Pages._discoverSetView('list')" title="List view">☰</button>
                     </div>
                 </div>
+
+                <div id="discover-active-filters" class="discover-active-filters"></div>
 
                 <div id="discover-results">
                     <div class="spinner" style="margin:2rem auto"></div>
@@ -678,15 +730,42 @@ const Pages = {
         let filtered = [...people];
         const dept = window._discoverDept;
         const gender = window._discoverGender || 'all';
+        const genre = window._discoverGenre || 'all';
+        const media = window._discoverMedia || 'all';
+        const tier = window._discoverTier || 'all';
 
+        // Department filter
         if (dept && this._deptMap[dept]) {
             filtered = filtered.filter(p =>
                 p.known_for_department?.toLowerCase() === this._deptMap[dept].toLowerCase()
             );
         }
+
+        // Gender filter
         if (gender === 'female') filtered = filtered.filter(p => p.gender === 1);
         else if (gender === 'male') filtered = filtered.filter(p => p.gender === 2);
         else if (gender === 'other') filtered = filtered.filter(p => p.gender === 3 || p.gender === 0);
+
+        // Genre filter — match against known_for genre_ids
+        if (genre !== 'all') {
+            const gid = parseInt(genre, 10);
+            filtered = filtered.filter(p =>
+                (p.known_for || []).some(k => (k.genre_ids || []).includes(gid))
+            );
+        }
+
+        // Media type filter — match against known_for media_type
+        if (media !== 'all') {
+            filtered = filtered.filter(p =>
+                (p.known_for || []).some(k => k.media_type === media)
+            );
+        }
+
+        // Popularity tier filter
+        if (tier === 'a-list') filtered = filtered.filter(p => (p.popularity || 0) >= 25);
+        else if (tier === 'established') filtered = filtered.filter(p => (p.popularity || 0) >= 15 && (p.popularity || 0) < 25);
+        else if (tier === 'working') filtered = filtered.filter(p => (p.popularity || 0) >= 5 && (p.popularity || 0) < 15);
+        else if (tier === 'emerging') filtered = filtered.filter(p => (p.popularity || 0) < 5);
 
         return filtered;
     },
@@ -704,11 +783,21 @@ const Pages = {
         const view = window._discoverView || 'grid';
         if (people.length === 0) return Components.emptyState('🔍', 'No results', 'Try a different search, department, or filter.');
         if (view === 'list') {
-            return `<div class="discover-list">${people.map(p => {
+            return `<div class="discover-list">
+                <div class="discover-list-header">
+                    <div></div>
+                    <div>Name</div>
+                    <div>Known For</div>
+                    <div>Pop.</div>
+                </div>
+                ${people.map(p => {
                 const photo = p.profile_path ? API.profileUrl(p.profile_path, 'medium') : '';
                 const dept = p.known_for_department || '';
                 const knownFor = (p.known_for || []).slice(0, 3).map(k => k.title || k.name).filter(Boolean).join(', ');
                 const href = API.getPersonUrl(p);
+                const pop = Math.round(p.popularity || 0);
+                const tierLabel = pop >= 25 ? 'A-List' : pop >= 15 ? 'Established' : pop >= 5 ? 'Working' : 'Emerging';
+                const tierClass = pop >= 25 ? 'tier-a' : pop >= 15 ? 'tier-b' : pop >= 5 ? 'tier-c' : 'tier-d';
                 return `<a href="${href}" class="discover-list-item" data-link>
                     <div class="discover-list-photo">
                         ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy">` : `<div class="discover-list-placeholder">${(p.name || '?').charAt(0)}</div>`}
@@ -718,7 +807,10 @@ const Pages = {
                         <span class="discover-list-dept">${dept}</span>
                     </div>
                     <div class="discover-list-known">${knownFor}</div>
-                    <div class="discover-list-pop">${Math.round(p.popularity || 0)}</div>
+                    <div class="discover-list-pop">
+                        <span class="discover-pop-score">${pop}</span>
+                        <span class="discover-pop-tier ${tierClass}">${tierLabel}</span>
+                    </div>
                 </a>`;
             }).join('')}</div>`;
         }
@@ -863,15 +955,82 @@ const Pages = {
         this._discoverReapplyFilters();
     },
 
+    _discoverSetGenre(value) {
+        window._discoverGenre = value;
+        this._discoverReapplyFilters();
+    },
+
+    _discoverSetMedia(value) {
+        window._discoverMedia = value;
+        this._discoverReapplyFilters();
+    },
+
+    _discoverSetTier(value) {
+        window._discoverTier = value;
+        this._discoverReapplyFilters();
+    },
+
     _discoverSetView(view) {
         window._discoverView = view;
         document.querySelectorAll('.discover-view-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === (view === 'grid' ? '⊞' : '☰')));
         this._discoverReapplyFilters();
     },
 
+    _discoverClearFilter(key) {
+        window['_discover' + key.charAt(0).toUpperCase() + key.slice(1)] = 'all';
+        const selectEl = document.getElementById(`discover-${key}-select`);
+        if (selectEl) selectEl.value = 'all';
+        this._discoverReapplyFilters();
+    },
+
+    _discoverClearAllFilters() {
+        ['gender', 'genre', 'media', 'tier'].forEach(k => {
+            window['_discover' + k.charAt(0).toUpperCase() + k.slice(1)] = 'all';
+            const el = document.getElementById(`discover-${k}-select`);
+            if (el) el.value = 'all';
+        });
+        this._discoverReapplyFilters();
+    },
+
+    _discoverUpdateActiveFilters() {
+        const container = document.getElementById('discover-active-filters');
+        if (!container) return;
+
+        const filters = [];
+        const labelMap = {
+            gender: { female: 'Female', male: 'Male', other: 'Non-Binary' },
+            media: { movie: 'Film Only', tv: 'TV Only' },
+            tier: { 'a-list': 'A-List (25+)', established: 'Established (15–25)', working: 'Working Pro (5–15)', emerging: 'Emerging (<5)' }
+        };
+
+        // Genre label lookup
+        const genreNames = { '28': 'Action', '12': 'Adventure', '16': 'Animation', '35': 'Comedy', '80': 'Crime', '99': 'Documentary', '18': 'Drama', '10751': 'Family', '14': 'Fantasy', '36': 'History', '27': 'Horror', '10402': 'Music', '9648': 'Mystery', '10749': 'Romance', '878': 'Sci-Fi', '53': 'Thriller', '10752': 'War', '37': 'Western' };
+
+        if (window._discoverGender && window._discoverGender !== 'all')
+            filters.push({ key: 'gender', label: labelMap.gender[window._discoverGender] || window._discoverGender });
+        if (window._discoverGenre && window._discoverGenre !== 'all')
+            filters.push({ key: 'genre', label: genreNames[window._discoverGenre] || window._discoverGenre });
+        if (window._discoverMedia && window._discoverMedia !== 'all')
+            filters.push({ key: 'media', label: labelMap.media[window._discoverMedia] || window._discoverMedia });
+        if (window._discoverTier && window._discoverTier !== 'all')
+            filters.push({ key: 'tier', label: labelMap.tier[window._discoverTier] || window._discoverTier });
+
+        if (filters.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        container.innerHTML = `
+            ${filters.map(f => `<span class="discover-active-tag">${f.label}<button onclick="Pages._discoverClearFilter('${f.key}')" title="Remove">&times;</button></span>`).join('')}
+            ${filters.length > 1 ? `<button class="discover-clear-all" onclick="Pages._discoverClearAllFilters()">Clear All</button>` : ''}
+        `;
+    },
+
     _discoverReapplyFilters() {
         const resultsEl = document.getElementById('discover-results');
         if (!resultsEl) return;
+
+        this._discoverUpdateActiveFilters();
 
         const query = window._discoverQuery;
         if (query && query.length >= 2) {
