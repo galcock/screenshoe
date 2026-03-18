@@ -405,7 +405,7 @@ const Pages = {
 
         // Fresh Kernels link
         const fkSlug = API.generateSlug(person.name);
-        const fkUrl = `https://freshkernels.com/person/${id}/${fkSlug}`;
+        const fkUrl = `https://freshkernels.com/person/${fkSlug}-${id}`;
 
         // External links
         const extIds = person.external_ids || {};
