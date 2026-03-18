@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /messages
+Disallow: /settings
+Disallow: /admin
+Sitemap: https://screenshoe.com/sitemap.xml

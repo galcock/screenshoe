@@ -1,0 +1,1412 @@
+/**
+ * Screenshoe — The Industry Talks Here
+ * Main application: page rendering and initialization
+ */
+
+const Pages = {
+    // After-render hooks (called after page HTML is inserted into DOM)
+    _afterRender: {},
+
+    // ==========================================
+    // HOME PAGE
+    // ==========================================
+    async home() {
+        SEO.clearJsonLd();
+        SEO.updateMeta({
+            title: 'Screenshoe \u2014 The Industry Talks Here',
+            description: 'The first social network exclusively for verified film & television professionals. Connect with actors, directors, writers, producers, and crew from Hollywood and worldwide.',
+            url: 'https://screenshoe.com'
+        });
+        SEO.setOrganizationSchema();
+        SEO.setWebSiteSchema();
+        SEO.setRobots('index,follow');
+
+        // Load trending people from TMDB
+        let trendingPeople = [];
+        try {
+            const data = await API.getPopularPeople(1);
+            trendingPeople = (data.results || []).slice(0, 12);
+        } catch (e) {
+            console.warn('Failed to load trending people:', e);
+        }
+
+        // Load verified profiles from Firestore (recent joins)
+        let recentMembers = [];
+        let memberCount = 0;
+        if (db) {
+            try {
+                const snap = await db.collection('ss_profiles')
+                    .where('verified', '==', true)
+                    .orderBy('claimedAt', 'desc')
+                    .limit(8)
+                    .get();
+                recentMembers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // Get approximate member count
+                const countSnap = await db.collection('ss_profiles')
+                    .where('verified', '==', true)
+                    .get();
+                memberCount = countSnap.size;
+            } catch (e) {
+                console.warn('Failed to load members:', e);
+            }
+        }
+
+        // Load recent feed posts
+        let recentPosts = [];
+        if (db) {
+            try {
+                const snap = await db.collection('ss_posts')
+                    .where('hidden', '==', false)
+                    .orderBy('createdAt', 'desc')
+                    .limit(3)
+                    .get();
+                recentPosts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (e) {
+                console.warn('Failed to load posts:', e);
+            }
+        }
+
+        const departments = [
+            { name: 'Acting', icon: '🎭', slug: 'acting' },
+            { name: 'Directing', icon: '🎬', slug: 'directing' },
+            { name: 'Writing', icon: '✍️', slug: 'writing' },
+            { name: 'Production', icon: '🎥', slug: 'production' },
+            { name: 'Music', icon: '🎵', slug: 'sound' },
+            { name: 'Cinematography', icon: '📷', slug: 'camera' },
+            { name: 'Art & Design', icon: '🎨', slug: 'art' },
+            { name: 'Editing', icon: '✂️', slug: 'editing' },
+        ];
+
+        return `
+            <!-- Hero Section -->
+            <section class="hero">
+                <div class="hero-bg"></div>
+                <div class="hero-content">
+                    <h1 class="hero-tagline">The Industry<br>Talks Here.</h1>
+                    <p class="hero-subtitle">The first social network exclusively for verified film & television professionals.</p>
+                    <div class="hero-cta-row">
+                        ${Auth.isVerified()
+                            ? `<a href="/feed" class="btn btn-primary btn-lg">View Feed</a>`
+                            : Auth.isSignedIn()
+                                ? `<a href="/verify" class="btn btn-primary btn-lg">Claim Your Profile</a>`
+                                : `<a href="/verify" class="btn btn-primary btn-lg">Claim Your Profile</a>
+                                   <a href="/discover" class="btn btn-secondary btn-lg">Discover People</a>`
+                        }
+                    </div>
+                    ${recentMembers.length > 0 ? `
+                        <div class="hero-members">
+                            <div class="hero-members-avatars">
+                                ${recentMembers.slice(0, 5).map(m => `
+                                    <img class="hero-member-avatar"
+                                         src="${m.customPhotoUrl || (m.profilePath ? API.profileUrl(m.profilePath, 'small') : '')}"
+                                         alt="${m.name || ''}"
+                                         onerror="this.style.display='none'">
+                                `).join('')}
+                            </div>
+                            <span class="hero-members-text">
+                                ${memberCount > 0 ? `Join ${memberCount}+ verified professional${memberCount !== 1 ? 's' : ''}` : 'Join verified professionals on Screenshoe'}
+                            </span>
+                        </div>
+                    ` : `
+                        <div class="hero-members">
+                            <span class="hero-members-text">Exclusively for verified film & TV professionals</span>
+                        </div>
+                    `}
+                </div>
+            </section>
+
+            <!-- Browse by Department -->
+            <section class="container" style="padding-top:var(--spacing-3xl)">
+                <h2 class="section-heading">Browse by Department</h2>
+                <div class="department-grid">
+                    ${departments.map(d => `
+                        <a href="/discover/${d.slug}" class="department-card">
+                            <span class="department-icon">${d.icon}</span>
+                            <span class="department-name">${d.name}</span>
+                        </a>
+                    `).join('')}
+                </div>
+            </section>
+
+            <!-- Trending in Hollywood -->
+            <section class="container" style="padding-top:var(--spacing-3xl)">
+                <div class="section-header">
+                    <h2 class="section-heading">Trending in Hollywood</h2>
+                    <a href="/discover" class="section-link">View All →</a>
+                </div>
+                <div class="person-card-grid">
+                    ${trendingPeople.map(p => Components.personCard(p)).join('')}
+                </div>
+            </section>
+
+            ${recentPosts.length > 0 ? `
+            <!-- Latest from the Industry -->
+            <section class="container" style="padding-top:var(--spacing-3xl);padding-bottom:var(--spacing-3xl)">
+                <div class="section-header">
+                    <h2 class="section-heading">Latest from the Industry</h2>
+                    <a href="/feed" class="section-link">View Feed →</a>
+                </div>
+                <div class="feed-posts" style="max-width:var(--max-width-narrow)">
+                    ${recentPosts.map(p => Components.postCard(p)).join('')}
+                </div>
+            </section>
+            ` : ''}
+
+            <!-- Value Props -->
+            <section class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <div class="about-values-grid">
+                    <div class="about-value">
+                        <div class="about-value-icon">🔐</div>
+                        <h3 class="about-value-title">Verified Only</h3>
+                        <p class="about-value-text">Every member is identity-verified against their professional credits. No fans, no bots, no imposters.</p>
+                    </div>
+                    <div class="about-value">
+                        <div class="about-value-icon">💬</div>
+                        <h3 class="about-value-title">Direct Access</h3>
+                        <p class="about-value-text">Message any verified professional directly. No agents, no managers, no gatekeepers.</p>
+                    </div>
+                    <div class="about-value">
+                        <div class="about-value-icon">🎬</div>
+                        <h3 class="about-value-title">Industry First</h3>
+                        <p class="about-value-text">Built by and for the entertainment industry. Your professional network, your way.</p>
+                    </div>
+                </div>
+            </section>
+        `;
+    },
+
+    // ==========================================
+    // DISCOVER PAGE
+    // ==========================================
+    async discover(department) {
+        const deptMap = {
+            'acting': 'Acting',
+            'directing': 'Directing',
+            'writing': 'Writing',
+            'production': 'Production',
+            'sound': 'Sound',
+            'camera': 'Camera',
+            'art': 'Art',
+            'editing': 'Editing',
+            'visual-effects': 'Visual Effects',
+        };
+
+        const selectedDept = department ? (deptMap[department] || department) : null;
+        const pageTitle = selectedDept ? `Discover — ${selectedDept}` : 'Discover';
+
+        SEO.clearJsonLd();
+        SEO.updateMeta({
+            title: pageTitle,
+            description: `Browse verified ${selectedDept || 'film & television'} professionals on Screenshoe. Discover actors, directors, writers, producers, and crew from Hollywood and worldwide.`,
+            url: `https://screenshoe.com/discover${department ? '/' + department : ''}`
+        });
+        SEO.setRobots('index,follow');
+
+        let people = [];
+        try {
+            const data = await API.getPopularPeople(1);
+            people = data.results || [];
+
+            // Filter by department if specified
+            if (selectedDept) {
+                people = people.filter(p =>
+                    p.known_for_department?.toLowerCase() === selectedDept.toLowerCase()
+                );
+            }
+        } catch (e) {
+            console.warn('Failed to load people:', e);
+        }
+
+        // Also check for verified profiles in Firestore
+        let verifiedIds = new Set();
+        if (db) {
+            try {
+                const snap = await db.collection('ss_profiles')
+                    .where('verified', '==', true)
+                    .get();
+                snap.docs.forEach(d => verifiedIds.add(Number(d.id)));
+            } catch (e) {}
+        }
+
+        // Mark verified people
+        people = people.map(p => ({
+            ...p,
+            verified: verifiedIds.has(p.id)
+        }));
+
+        const deptFilters = [
+            { slug: '', label: 'All' },
+            { slug: 'acting', label: 'Acting' },
+            { slug: 'directing', label: 'Directing' },
+            { slug: 'writing', label: 'Writing' },
+            { slug: 'production', label: 'Production' },
+            { slug: 'sound', label: 'Music & Sound' },
+            { slug: 'camera', label: 'Cinematography' },
+            { slug: 'art', label: 'Art & Design' },
+            { slug: 'editing', label: 'Editing' },
+        ];
+
+        return `
+            <div class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <h1 class="page-title">Discover</h1>
+                <p class="text-secondary" style="margin-bottom:var(--spacing-xl)">Browse film & television professionals</p>
+
+                <div class="discover-filters">
+                    ${deptFilters.map(f => `
+                        <a href="/discover${f.slug ? '/' + f.slug : ''}"
+                           class="discover-filter ${(department || '') === f.slug ? 'active' : ''}">
+                            ${f.label}
+                        </a>
+                    `).join('')}
+                </div>
+
+                ${people.length > 0 ? `
+                    <div class="person-card-grid">
+                        ${people.map(p => Components.personCard(p)).join('')}
+                    </div>
+                ` : `
+                    ${Components.emptyState('🔍', 'No results', 'Try a different department or check back later.')}
+                `}
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // PERSON PROFILE PAGE
+    // ==========================================
+    async person(id) {
+        // Fetch TMDB data
+        let person;
+        try {
+            person = await API.getPersonDetails(id);
+        } catch (e) {
+            return Components.errorPage('Could not load this profile.');
+        }
+
+        if (!person || !person.name) {
+            return Components.errorPage('Profile not found.');
+        }
+
+        // SEO: keyword-rich title and description for person pages
+        SEO.clearJsonLd();
+        SEO.updateMeta({
+            title: SEO.buildPersonTitle(person),
+            description: SEO.buildPersonDescription(person),
+            image: person.profile_path ? API.profileUrl(person.profile_path, 'large') : undefined,
+            url: `https://screenshoe.com${API.getPersonUrl(person)}`,
+            type: 'profile'
+        });
+        SEO.setPersonSchema(person);
+        SEO.setBreadcrumbs(person);
+        SEO.setRobots('index,follow');
+
+        // Check Firestore for claimed profile
+        let profileData = null;
+        let isVerified = false;
+        let isClaimed = false;
+        let isOwner = Auth.ownsProfile(id);
+
+        if (db) {
+            try {
+                const doc = await db.collection('ss_profiles').doc(String(id)).get();
+                if (doc.exists) {
+                    profileData = doc.data();
+                    isVerified = profileData.verified === true;
+                    isClaimed = profileData.claimedBy != null;
+                }
+            } catch (e) {}
+        }
+
+        // Load posts if verified
+        let posts = [];
+        if (isVerified) {
+            posts = await Posts.loadPersonPosts(id, 10);
+        }
+
+        // Build filmography
+        const movieCredits = person.movie_credits?.cast || [];
+        const tvCredits = person.tv_credits?.cast || [];
+        const crewCredits = [
+            ...(person.movie_credits?.crew || []),
+            ...(person.tv_credits?.crew || [])
+        ];
+
+        // Sort by date, most recent first
+        const sortedMovies = [...movieCredits].sort((a, b) => {
+            const dateA = a.release_date || '';
+            const dateB = b.release_date || '';
+            return dateB.localeCompare(dateA);
+        }).slice(0, 20);
+
+        const sortedTV = [...tvCredits].sort((a, b) => {
+            const dateA = a.first_air_date || '';
+            const dateB = b.first_air_date || '';
+            return dateB.localeCompare(dateA);
+        }).slice(0, 20);
+
+        // For crew members (directors, writers, etc), show crew credits
+        const isCrewPrimary = ['Directing', 'Writing', 'Production', 'Sound', 'Camera', 'Art', 'Editing', 'Visual Effects']
+            .includes(person.known_for_department);
+
+        const sortedCrew = isCrewPrimary ? [...crewCredits].sort((a, b) => {
+            const dateA = a.release_date || a.first_air_date || '';
+            const dateB = b.release_date || b.first_air_date || '';
+            return dateB.localeCompare(dateA);
+        }).slice(0, 20) : [];
+
+        const bio = profileData?.customBio || person.biography || '';
+        const photoUrl = profileData?.customPhotoUrl ||
+            (person.profile_path ? API.profileUrl(person.profile_path, 'large') : '');
+
+        const age = person.birthday ? (() => {
+            const birth = new Date(person.birthday);
+            const end = person.deathday ? new Date(person.deathday) : new Date();
+            return Math.floor((end - birth) / (365.25 * 24 * 60 * 60 * 1000));
+        })() : null;
+
+        // Fresh Kernels link
+        const fkSlug = API.generateSlug(person.name);
+        const fkUrl = `https://freshkernels.com/person/${id}/${fkSlug}`;
+
+        return `
+            <!-- Profile Hero -->
+            <div class="profile-hero">
+                <div class="profile-hero-bg" ${person.known_for?.length && person.known_for[0]?.backdrop_path
+                    ? `style="background-image:url(${API.backdropUrl(person.known_for[0].backdrop_path, 'large')})"`
+                    : ''}></div>
+                <div class="profile-hero-overlay"></div>
+                <div class="container">
+                    <div class="profile-header">
+                        <div class="profile-photo-wrapper">
+                            ${photoUrl
+                                ? `<img class="profile-photo ${isVerified ? 'profile-photo-verified' : ''}" src="${photoUrl}" alt="${person.name}">`
+                                : `<div class="profile-photo profile-photo-placeholder ${isVerified ? 'profile-photo-verified' : ''}">${person.name.charAt(0)}</div>`
+                            }
+                        </div>
+                        <div class="profile-info">
+                            <h1 class="profile-name">
+                                ${person.name}
+                                ${isVerified ? Components.verifiedBadge('lg') : ''}
+                            </h1>
+                            <div class="profile-dept">${person.known_for_department || 'Film Professional'}</div>
+                            ${person.birthday ? `
+                                <div class="profile-meta">
+                                    ${person.birthday ? `<span>Born ${new Date(person.birthday).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>` : ''}
+                                    ${age ? `<span>· ${person.deathday ? 'Died age' : 'Age'} ${age}</span>` : ''}
+                                    ${person.place_of_birth ? `<span>· ${person.place_of_birth}</span>` : ''}
+                                </div>
+                            ` : ''}
+
+                            <div class="profile-actions">
+                                ${isVerified && Auth.isVerified() && !isOwner ? `
+                                    <button class="btn btn-primary" id="profile-message-btn" data-uid="${profileData?.claimedBy}" data-name="${person.name}" data-photo="${photoUrl}" data-tmdb-id="${id}">
+                                        💬 Message
+                                    </button>
+                                ` : ''}
+                                ${isOwner ? `
+                                    <button class="btn btn-secondary" id="profile-edit-btn">Edit Profile</button>
+                                ` : ''}
+                                ${!isClaimed && !Auth.isVerified() ? `
+                                    <a href="/verify" class="btn btn-primary">Claim This Profile</a>
+                                ` : ''}
+                                <a href="${fkUrl}" target="_blank" class="btn btn-secondary btn-sm">View on Fresh Kernels</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="container" style="padding-bottom:var(--spacing-3xl)">
+                <!-- Bio -->
+                ${bio ? `
+                    <section class="profile-section">
+                        <h2 class="profile-section-title">About</h2>
+                        <p class="profile-bio">${bio.replace(/\n/g, '<br>')}</p>
+                    </section>
+                ` : ''}
+
+                ${!isClaimed ? Components.claimProfileCTA(person) : ''}
+
+                <!-- Posts (verified users only) -->
+                ${isVerified && posts.length > 0 ? `
+                    <section class="profile-section">
+                        <h2 class="profile-section-title">Posts</h2>
+                        <div class="feed-posts">
+                            ${posts.map(p => Components.postCard(p)).join('')}
+                        </div>
+                    </section>
+                ` : ''}
+
+                ${isOwner ? `
+                    <section class="profile-section">
+                        <h2 class="profile-section-title">New Post</h2>
+                        ${Components.postComposer({ photoUrl: photoUrl, name: person.name })}
+                    </section>
+                ` : ''}
+
+                <!-- Filmography -->
+                ${sortedMovies.length > 0 || sortedTV.length > 0 || sortedCrew.length > 0 ? `
+                    <section class="profile-section">
+                        <h2 class="profile-section-title">Filmography</h2>
+
+                        ${isCrewPrimary && sortedCrew.length > 0 ? `
+                            <h3 class="profile-subsection-title">As ${person.known_for_department === 'Directing' ? 'Director' : person.known_for_department === 'Writing' ? 'Writer' : person.known_for_department}</h3>
+                            <div class="filmography-list">
+                                ${sortedCrew.map(c => Components.filmographyItem(c, c.title ? 'movie' : 'tv')).join('')}
+                            </div>
+                        ` : ''}
+
+                        ${sortedMovies.length > 0 ? `
+                            <h3 class="profile-subsection-title">${isCrewPrimary ? 'Acting — ' : ''}Movies</h3>
+                            <div class="filmography-list">
+                                ${sortedMovies.map(c => Components.filmographyItem(c, 'movie')).join('')}
+                            </div>
+                        ` : ''}
+
+                        ${sortedTV.length > 0 ? `
+                            <h3 class="profile-subsection-title">${isCrewPrimary ? 'Acting — ' : ''}Television</h3>
+                            <div class="filmography-list">
+                                ${sortedTV.map(c => Components.filmographyItem(c, 'tv')).join('')}
+                            </div>
+                        ` : ''}
+                    </section>
+                ` : ''}
+
+                <!-- External Links -->
+                ${person.external_ids ? `
+                    <section class="profile-section">
+                        <h2 class="profile-section-title">Links</h2>
+                        <div class="profile-links">
+                            ${person.external_ids.imdb_id ? `<a href="https://www.imdb.com/name/${person.external_ids.imdb_id}" target="_blank" class="btn btn-secondary btn-sm">IMDb</a>` : ''}
+                            ${person.external_ids.instagram_id ? `<a href="https://instagram.com/${person.external_ids.instagram_id}" target="_blank" class="btn btn-secondary btn-sm">Instagram</a>` : ''}
+                            ${person.external_ids.twitter_id ? `<a href="https://x.com/${person.external_ids.twitter_id}" target="_blank" class="btn btn-secondary btn-sm">X / Twitter</a>` : ''}
+                            <a href="${fkUrl}" target="_blank" class="btn btn-secondary btn-sm">Fresh Kernels</a>
+                        </div>
+                    </section>
+                ` : ''}
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // FEED PAGE
+    // ==========================================
+    async feed() {
+        SEO.updateMeta({
+            title: 'Feed',
+            description: 'Latest posts from verified film & television professionals on Screenshoe.',
+            url: 'https://screenshoe.com/feed'
+        });
+
+        const posts = await Posts.loadFeed(true);
+
+        return `
+            <div class="container container-narrow" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <h1 class="page-title">Feed</h1>
+
+                ${Auth.isVerified() ? Components.postComposer({
+                    photoUrl: Auth.getProfile()?.customPhotoUrl || Auth.getProfile()?.photoURL || '',
+                    name: Auth.getProfile()?.displayName || ''
+                }) : `
+                    <div class="card" style="padding:var(--spacing-lg);margin-bottom:var(--spacing-xl);text-align:center">
+                        <p class="text-secondary">Only verified professionals can post.</p>
+                        <a href="/verify" class="btn btn-primary btn-sm" style="margin-top:var(--spacing-md)">Get Verified</a>
+                    </div>
+                `}
+
+                <div id="feed-posts" class="feed-posts">
+                    ${posts.length > 0
+                        ? posts.map(p => Components.postCard(p)).join('')
+                        : Components.emptyState('📝', 'No posts yet', 'Be the first verified professional to post on Screenshoe.')
+                    }
+                </div>
+
+                ${Posts._feedHasMore ? `<div id="feed-sentinel" class="text-center" style="padding:2rem"><div class="spinner"></div></div>` : ''}
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // POST DETAIL PAGE
+    // ==========================================
+    async postDetail(postId) {
+        const post = await Posts.getPost(postId);
+
+        if (!post) {
+            return Components.errorPage('Post not found.');
+        }
+
+        SEO.updateMeta({
+            title: `${post.authorName}'s post`,
+            description: post.text?.substring(0, 160) || 'A post on Screenshoe',
+            url: `https://screenshoe.com/post/${postId}`
+        });
+
+        const authorSlug = API.generateSlug(post.authorName || '');
+        const isOwner = Auth.getUid() === post.authorId;
+
+        return `
+            <div class="container container-narrow" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <a href="/feed" class="btn btn-secondary btn-sm" style="margin-bottom:var(--spacing-lg)">← Back to Feed</a>
+
+                <div class="post-card post-card-detail">
+                    <div class="post-header">
+                        <a href="/person/${post.authorTmdbId}/${authorSlug}" class="post-author-link">
+                            ${post.authorPhotoUrl
+                                ? `<img class="post-author-photo" src="${post.authorPhotoUrl}" alt="${post.authorName}">`
+                                : `<div class="post-author-photo post-author-photo-placeholder">${(post.authorName || '?').charAt(0)}</div>`
+                            }
+                            <div>
+                                <span class="post-author-name">${post.authorName || 'Unknown'} ${post.authorVerified ? Components.verifiedBadge('sm') : ''}</span>
+                                <span class="post-timestamp">${Components.relativeTime(post.createdAt?.toDate?.() || post.createdAt)}</span>
+                            </div>
+                        </a>
+                        ${isOwner ? `<button class="btn btn-icon btn-sm" data-action="delete-post" data-post-id="${postId}" title="Delete post">🗑️</button>` : ''}
+                    </div>
+                    <div class="post-content">${(post.text || '').replace(/\n/g, '<br>')}</div>
+                    ${post.imageUrl ? `<img class="post-image" src="${post.imageUrl}" alt="Post image">` : ''}
+                    <div class="post-actions">
+                        <button class="post-action ${post.liked ? 'liked' : ''}" data-action="like" data-post-id="${postId}">
+                            <span class="like-icon">${post.liked ? Components._icons.heartFilled : Components._icons.heart}</span>
+                            <span class="like-count">${post.likeCount || 0}</span>
+                        </button>
+                        <span class="post-action">
+                            ${Components._icons.comment}
+                            <span>${post.commentCount || 0}</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Comments -->
+                <div class="comments-section">
+                    <h3 style="margin-bottom:var(--spacing-lg)">Comments</h3>
+
+                    ${Auth.isVerified() ? `
+                        <div class="comment-composer" style="margin-bottom:var(--spacing-xl)">
+                            <textarea id="comment-input-${postId}" class="form-textarea" placeholder="Add a comment..." rows="2" maxlength="500"></textarea>
+                            <button class="btn btn-primary btn-sm" data-action="submit-comment" data-post-id="${postId}" style="margin-top:var(--spacing-sm)">Comment</button>
+                        </div>
+                    ` : ''}
+
+                    ${post.comments && post.comments.length > 0 ? `
+                        <div class="comments-list">
+                            ${post.comments.map(c => {
+                                const cSlug = API.generateSlug(c.authorName || '');
+                                return `
+                                    <div class="comment-item">
+                                        <a href="/person/${c.authorTmdbId}/${cSlug}" class="comment-author-link">
+                                            ${c.authorPhotoUrl
+                                                ? `<img class="comment-author-photo" src="${c.authorPhotoUrl}" alt="${c.authorName}">`
+                                                : `<div class="comment-author-photo comment-author-photo-placeholder">${(c.authorName || '?').charAt(0)}</div>`
+                                            }
+                                        </a>
+                                        <div class="comment-body">
+                                            <span class="comment-author-name">${c.authorName || 'Unknown'} ${Components.verifiedBadge('sm')}</span>
+                                            <p class="comment-text">${(c.text || '').replace(/</g, '&lt;')}</p>
+                                            <span class="comment-time">${Components.relativeTime(c.createdAt?.toDate?.() || c.createdAt)}</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    ` : `
+                        <p class="text-secondary">No comments yet.</p>
+                    `}
+                </div>
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // MESSAGES PAGE
+    // ==========================================
+    async messages() {
+        if (!Auth.requireVerified()) return '';
+
+        SEO.updateMeta({ title: 'Messages', url: 'https://screenshoe.com/messages' });
+        SEO.setRobots('noindex,nofollow');
+
+        return `
+            <div class="messages-layout">
+                <div class="messages-sidebar">
+                    <div class="messages-sidebar-header">
+                        <h2>Messages</h2>
+                    </div>
+                    <div id="conversations-list" class="messages-list">
+                        ${Components.skeleton('message', 3)}
+                    </div>
+                </div>
+                <div class="chat-area" id="chat-area">
+                    <div class="chat-empty">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">💬</div>
+                            <h3>Select a conversation</h3>
+                            <p class="empty-state-text">Choose a conversation from the sidebar or start one from someone's profile.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // CONVERSATION PAGE (specific chat)
+    // ==========================================
+    async conversation(convId) {
+        if (!Auth.requireVerified()) return '';
+
+        SEO.updateMeta({ title: 'Messages' });
+        SEO.setRobots('noindex,nofollow');
+
+        // Find the conversation
+        let conv = Messaging.getConversation(convId);
+        let otherName = 'Unknown';
+        let otherPhotoUrl = '';
+        let otherTmdbId = null;
+
+        if (conv) {
+            const other = Messaging.getOtherParticipant(conv);
+            otherName = other.name;
+            otherPhotoUrl = other.photoUrl;
+            otherTmdbId = other.tmdbId;
+        }
+
+        return `
+            <div class="messages-layout">
+                <div class="messages-sidebar messages-sidebar-mobile-hidden">
+                    <div class="messages-sidebar-header">
+                        <h2>Messages</h2>
+                    </div>
+                    <div id="conversations-list" class="messages-list">
+                        ${Components.skeleton('message', 3)}
+                    </div>
+                </div>
+                <div class="chat-area" id="chat-area">
+                    <div class="chat-header">
+                        <a href="/messages" class="chat-back-btn">←</a>
+                        <a href="${otherTmdbId ? `/person/${otherTmdbId}` : '#'}" class="chat-header-user">
+                            ${otherPhotoUrl
+                                ? `<img class="chat-header-avatar" src="${otherPhotoUrl}" alt="${otherName}">`
+                                : `<div class="chat-header-avatar chat-header-avatar-placeholder">${otherName.charAt(0)}</div>`
+                            }
+                            <span class="chat-header-name">${otherName} ${Components.verifiedBadge('sm')}</span>
+                        </a>
+                    </div>
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="spinner" style="margin:2rem auto"></div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..." maxlength="2000" autocomplete="off">
+                        <button id="chat-send-btn" class="btn btn-primary btn-icon chat-send-btn">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 2L9 11M18 2L12 18L9 11M18 2L2 8L9 11"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // VERIFY PAGE
+    // ==========================================
+    async verify() {
+        if (Auth.isVerified()) {
+            return `
+                <div class="container container-narrow" style="padding-top:var(--spacing-3xl);padding-bottom:var(--spacing-3xl)">
+                    <div class="text-center">
+                        <div style="font-size:4rem;margin-bottom:1rem">✅</div>
+                        <h1>You're Verified</h1>
+                        <p class="text-secondary" style="margin:1rem 0 2rem">Your identity has been confirmed. You have full access to Screenshoe.</p>
+                        <a href="${Auth.getProfileUrl() || '/'}" class="btn btn-primary">Go to Your Profile</a>
+                    </div>
+                </div>
+            `;
+        }
+
+        SEO.updateMeta({
+            title: 'Claim Your Profile',
+            description: 'Verify your identity and claim your professional profile on Screenshoe.',
+            url: 'https://screenshoe.com/verify'
+        });
+
+        // Check if there's a pending verification
+        let existingVerification = null;
+        if (Auth.isSignedIn()) {
+            existingVerification = await Verification.getStatus();
+        }
+
+        if (existingVerification?.status === 'pending') {
+            return `
+                <div class="container container-narrow" style="padding-top:var(--spacing-3xl);padding-bottom:var(--spacing-3xl)">
+                    <div class="text-center">
+                        <div style="font-size:4rem;margin-bottom:1rem">⏳</div>
+                        <h1>Verification Pending</h1>
+                        <p class="text-secondary" style="margin:1rem 0;max-width:400px;margin-left:auto;margin-right:auto">
+                            Your verification for <strong>${existingVerification.tmdbName}</strong> is being reviewed.
+                            This typically takes less than 24 hours.
+                        </p>
+                        <a href="/" class="btn btn-secondary" style="margin-top:2rem">Back to Home</a>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (existingVerification?.status === 'rejected') {
+            Verification.reset();
+        }
+
+        // Not signed in yet — show sign-in prompt first
+        if (!Auth.isSignedIn()) {
+            return `
+                <div class="container container-narrow" style="padding-top:var(--spacing-3xl);padding-bottom:var(--spacing-3xl)">
+                    <div class="auth-card" style="max-width:500px;margin:0 auto">
+                        <h1 class="auth-title">Claim Your Profile</h1>
+                        <p class="text-secondary text-center" style="margin-bottom:var(--spacing-xl)">
+                            Sign in to begin the verification process.
+                        </p>
+                        <button class="btn btn-full auth-provider-btn" onclick="Auth.signInWithGoogle()">
+                            <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                            Continue with Google
+                        </button>
+
+                        <div class="auth-divider"><span>then</span></div>
+
+                        <div class="text-center text-secondary" style="font-size:0.9rem">
+                            <p>1. Find your profile in our database</p>
+                            <p>2. Verify your identity with a photo</p>
+                            <p>3. Get your verified badge ✓</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Signed in — show verification steps
+        Verification.reset();
+
+        return `
+            <div class="container container-narrow" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <!-- Step indicator -->
+                <div class="verify-steps">
+                    <div class="verify-step active" data-step="1"><span>1</span><label>Find</label></div>
+                    <div class="verify-step-line"></div>
+                    <div class="verify-step" data-step="2"><span>2</span><label>Confirm</label></div>
+                    <div class="verify-step-line"></div>
+                    <div class="verify-step" data-step="3"><span>3</span><label>Verify</label></div>
+                </div>
+
+                <div id="verify-content" style="max-width:500px;margin:var(--spacing-2xl) auto 0">
+                    <!-- Step content rendered by Verification module -->
+                </div>
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // LOGIN PAGE
+    // ==========================================
+    async login() {
+        if (Auth.isSignedIn()) {
+            Router.navigate(Auth.isVerified() ? '/' : '/verify');
+            return '';
+        }
+
+        SEO.updateMeta({
+            title: 'Sign In',
+            description: 'Sign in to Screenshoe — the social network for verified film professionals.',
+            url: 'https://screenshoe.com/login'
+        });
+
+        return `
+            <div class="container" style="padding-top:var(--spacing-3xl);padding-bottom:var(--spacing-3xl)">
+                <div class="auth-card" style="max-width:420px;margin:0 auto">
+                    <div class="text-center" style="margin-bottom:var(--spacing-xl)">
+                        <div style="font-size:3rem;margin-bottom:var(--spacing-md)">🎬</div>
+                        <h1 class="auth-title">Welcome to Screenshoe</h1>
+                        <p class="text-secondary">The social network for verified film & TV professionals.</p>
+                    </div>
+
+                    <button class="btn btn-full auth-provider-btn" onclick="Auth.signInWithGoogle()">
+                        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                        Continue with Google
+                    </button>
+
+                    <p class="text-tertiary text-center" style="margin-top:var(--spacing-xl);font-size:0.85rem">
+                        By signing in, you agree to Screenshoe's Terms of Service.
+                        Only verified film & television professionals may claim profiles.
+                    </p>
+                </div>
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // SETTINGS PAGE
+    // ==========================================
+    async settings() {
+        if (!Auth.requireVerified()) return '';
+
+        SEO.updateMeta({ title: 'Settings' });
+        SEO.setRobots('noindex,nofollow');
+
+        const profile = Auth.getProfile();
+        const tmdbId = profile?.tmdbId;
+
+        let ssProfile = null;
+        if (db && tmdbId) {
+            try {
+                const doc = await db.collection('ss_profiles').doc(String(tmdbId)).get();
+                if (doc.exists) ssProfile = doc.data();
+            } catch (e) {}
+        }
+
+        return `
+            <div class="container container-narrow" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <h1 class="page-title">Settings</h1>
+
+                <div class="settings-section">
+                    <h3>Profile</h3>
+                    <div class="form-group">
+                        <label class="form-label">Custom Bio</label>
+                        <textarea id="settings-bio" class="form-textarea" rows="4" maxlength="1000" placeholder="Write something about yourself...">${ssProfile?.customBio || ''}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Profile Photo</label>
+                        <p class="text-tertiary" style="font-size:0.85rem;margin-bottom:var(--spacing-sm)">Upload a custom profile photo. Your TMDB photo is used by default.</p>
+                        <input type="file" id="settings-photo" accept="image/*" class="form-input">
+                    </div>
+                    <button id="settings-save-btn" class="btn btn-primary">Save Changes</button>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Notifications</h3>
+                    <div class="flex flex-between" style="align-items:center">
+                        <div>
+                            <div class="form-label" style="margin-bottom:0">Email notifications for new messages</div>
+                        </div>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="settings-dm-email" ${profile?.notificationPrefs?.dmEmail !== false ? 'checked' : ''}>
+                            <span class="settings-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Account</h3>
+                    <p class="text-secondary" style="margin-bottom:var(--spacing-md)">Signed in as ${profile?.email || 'unknown'}</p>
+                    <button class="btn btn-secondary" onclick="Auth.signOut()">Sign Out</button>
+                </div>
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // ADMIN PAGE
+    // ==========================================
+    async admin() {
+        if (!Auth.isAdmin()) {
+            return Components.errorPage('Access denied. Admin only.');
+        }
+
+        SEO.updateMeta({ title: 'Admin' });
+        SEO.setRobots('noindex,nofollow');
+
+        // Load pending verifications
+        let pendingVerifications = [];
+        if (db) {
+            try {
+                const snap = await db.collection('ss_verifications')
+                    .where('status', '==', 'pending')
+                    .orderBy('createdAt', 'asc')
+                    .limit(50)
+                    .get();
+                pendingVerifications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (e) {
+                console.warn('Failed to load verifications:', e);
+            }
+        }
+
+        // Load stats
+        let stats = { verified: 0, pending: 0, posts: 0 };
+        if (db) {
+            try {
+                const [verifiedSnap, pendingSnap, postsSnap] = await Promise.all([
+                    db.collection('ss_profiles').where('verified', '==', true).get(),
+                    db.collection('ss_verifications').where('status', '==', 'pending').get(),
+                    db.collection('ss_posts').get()
+                ]);
+                stats.verified = verifiedSnap.size;
+                stats.pending = pendingSnap.size;
+                stats.posts = postsSnap.size;
+            } catch (e) {}
+        }
+
+        return `
+            <div class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <h1 class="page-title">Admin Dashboard</h1>
+
+                <div class="admin-stat-grid">
+                    <div class="admin-stat-card">
+                        <div class="admin-stat-number">${stats.verified}</div>
+                        <div class="admin-stat-label">Verified Members</div>
+                    </div>
+                    <div class="admin-stat-card">
+                        <div class="admin-stat-number">${stats.pending}</div>
+                        <div class="admin-stat-label">Pending Verifications</div>
+                    </div>
+                    <div class="admin-stat-card">
+                        <div class="admin-stat-number">${stats.posts}</div>
+                        <div class="admin-stat-label">Total Posts</div>
+                    </div>
+                </div>
+
+                <h2 style="margin-top:var(--spacing-2xl)">Pending Verifications</h2>
+
+                ${pendingVerifications.length > 0 ? `
+                    <div class="admin-verifications">
+                        ${pendingVerifications.map(v => `
+                            <div class="admin-verification-item" data-verification-id="${v.id}">
+                                <div class="admin-verification-photos">
+                                    <div class="admin-verification-photo-col">
+                                        <label class="form-label">TMDB Photo</label>
+                                        ${v.tmdbPhotoUrl
+                                            ? `<img src="${v.tmdbPhotoUrl}" alt="TMDB photo of ${v.tmdbName}">`
+                                            : `<div class="admin-verification-no-photo">No TMDB photo</div>`
+                                        }
+                                    </div>
+                                    <div class="admin-verification-photo-col">
+                                        <label class="form-label">Selfie</label>
+                                        <img src="${v.selfieUrl}" alt="Verification selfie">
+                                    </div>
+                                </div>
+                                <div class="admin-verification-info">
+                                    <h3>${v.tmdbName}</h3>
+                                    <p class="text-secondary">TMDB ID: ${v.tmdbId} · Submitted ${Components.relativeTime(v.createdAt?.toDate?.() || v.createdAt)}</p>
+                                    ${v.confidenceScore != null ? `<p class="text-secondary">AI Confidence: ${v.confidenceScore}%</p>` : ''}
+                                </div>
+                                <div class="admin-verification-actions">
+                                    <button class="btn btn-primary btn-sm" onclick="Verification.approveVerification('${v.id}').then(() => Router.handleRoute())">Approve</button>
+                                    <button class="btn btn-danger btn-sm" onclick="Verification.rejectVerification('${v.id}', 'Identity could not be confirmed').then(() => Router.handleRoute())">Reject</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : `
+                    ${Components.emptyState('✅', 'All clear', 'No pending verifications.')}
+                `}
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // SEARCH PAGE
+    // ==========================================
+    async search(query) {
+        const q = query?.q || '';
+        SEO.updateMeta({ title: q ? `Search: ${q}` : 'Search' });
+
+        let results = [];
+        if (q.length >= 2) {
+            try {
+                const data = await API.searchPeople(q);
+                results = data.results || [];
+            } catch (e) {}
+        }
+
+        // Check which are verified
+        let verifiedIds = new Set();
+        if (db && results.length > 0) {
+            try {
+                const snap = await db.collection('ss_profiles')
+                    .where('verified', '==', true)
+                    .get();
+                snap.docs.forEach(d => verifiedIds.add(Number(d.id)));
+            } catch (e) {}
+        }
+
+        results = results.map(p => ({ ...p, verified: verifiedIds.has(p.id) }));
+
+        return `
+            <div class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
+                <h1 class="page-title">Search</h1>
+                <form action="/search" method="get" class="search-form" style="margin-bottom:var(--spacing-xl)">
+                    <input type="text" name="q" value="${q.replace(/"/g, '&quot;')}" class="form-input" placeholder="Search people in film & television..." style="font-size:1.1rem">
+                </form>
+
+                ${q.length >= 2 ? `
+                    ${results.length > 0 ? `
+                        <div class="person-card-grid">
+                            ${results.map(p => Components.personCard(p)).join('')}
+                        </div>
+                    ` : Components.emptyState('🔍', 'No results', `No one found for "${q}". They must be in the TMDB database.`)}
+                ` : `
+                    <p class="text-secondary">Enter a name to search for film & television professionals.</p>
+                `}
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // ABOUT PAGE
+    // ==========================================
+    async about() {
+        SEO.clearJsonLd();
+        SEO.updateMeta({
+            title: 'About Screenshoe \u2014 Social Network for Film & TV Professionals',
+            description: 'Screenshoe is the first social network exclusively for verified film & television professionals. Learn how identity verification works and join the industry community.',
+            url: 'https://screenshoe.com/about'
+        });
+        SEO.setRobots('index,follow');
+
+        return `
+            <div class="about-hero">
+                <h1 class="about-hero-title">The Industry<br>Talks Here.</h1>
+                <p class="about-hero-subtitle">Screenshoe is the first and only social network built exclusively for verified professionals in film and television.</p>
+            </div>
+
+            <div class="container container-narrow" style="padding-bottom:var(--spacing-3xl)">
+                <section class="about-section">
+                    <h2>Why Screenshoe?</h2>
+                    <p>Every other social network is built for everyone. Screenshoe is built for the industry. No fans, no bots, no influencers — just the people who actually make movies and television.</p>
+                    <p>Every member is identity-verified against their professional credits in the TMDB database. When you see a verified badge on Screenshoe, you know you're looking at the real person.</p>
+                </section>
+
+                <section class="about-section">
+                    <h2>How It Works</h2>
+                    <div class="about-values-grid">
+                        <div class="about-value">
+                            <div class="about-value-icon">🔍</div>
+                            <h3 class="about-value-title">Find Your Profile</h3>
+                            <p class="about-value-text">Search for yourself in our database of film & TV professionals, powered by TMDB and Fresh Kernels.</p>
+                        </div>
+                        <div class="about-value">
+                            <div class="about-value-icon">📸</div>
+                            <h3 class="about-value-title">Verify Your Identity</h3>
+                            <p class="about-value-text">Submit a photo for identity verification. We compare it to your known professional photos.</p>
+                        </div>
+                        <div class="about-value">
+                            <div class="about-value-icon">✅</div>
+                            <h3 class="about-value-title">Join the Community</h3>
+                            <p class="about-value-text">Once verified, post updates, message anyone in the industry, and own your official profile.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="about-section">
+                    <h2>Who Can Join?</h2>
+                    <p>Screenshoe is exclusively for professionals who appear in the TMDB (The Movie Database) credits. This includes:</p>
+                    <ul style="color:var(--text-secondary);line-height:2;padding-left:1.5rem">
+                        <li>Actors and actresses</li>
+                        <li>Directors and producers</li>
+                        <li>Writers and showrunners</li>
+                        <li>Cinematographers and editors</li>
+                        <li>Composers and sound designers</li>
+                        <li>Production designers and art directors</li>
+                        <li>Costume designers and makeup artists</li>
+                        <li>Visual effects artists</li>
+                        <li>Stunt coordinators</li>
+                        <li>And any other credited professional</li>
+                    </ul>
+                    <p style="margin-top:var(--spacing-lg)">If you have credits on TMDB, you can claim your profile. If you don't, you can't join — and that's the whole point.</p>
+                </section>
+
+                <section class="about-section">
+                    <h2>Fresh Kernels Integration</h2>
+                    <p>Screenshoe is powered by <a href="https://freshkernels.com" target="_blank">Fresh Kernels</a>, the community-driven movie and TV ratings platform. Every professional on Screenshoe has a corresponding <a href="https://freshkernels.com" target="_blank">Fresh Kernels profile</a> with audience ratings, filmography details, and community reviews for their work. Explore ratings and reviews for movies and TV shows at <a href="https://freshkernels.com" target="_blank">freshkernels.com</a>.</p>
+                </section>
+
+                <section class="about-section">
+                    <h2>Data & Privacy</h2>
+                    <p>Profile data is sourced from <a href="https://tmdb.org" target="_blank">TMDB</a> and <a href="https://freshkernels.com" target="_blank">Fresh Kernels</a>. Your verification photo is stored securely and used only for identity confirmation. Messages between users are private and encrypted in transit.</p>
+                </section>
+
+                <section class="about-section text-center">
+                    <a href="/verify" class="btn btn-primary btn-lg">Claim Your Profile</a>
+                </section>
+            </div>
+        `;
+    },
+
+    // ==========================================
+    // NOT FOUND
+    // ==========================================
+    notFound() {
+        SEO.updateMeta({ title: 'Page Not Found' });
+        return Components.errorPage('This page doesn\'t exist.');
+    },
+
+    // ==========================================
+    // ERROR
+    // ==========================================
+    error(message) {
+        return Components.errorPage(message);
+    }
+};
+
+// ==========================================
+// AFTER-RENDER HOOKS
+// ==========================================
+
+Pages._afterRender = {
+    // Verify page: initialize verification step rendering
+    verify: () => {
+        if (Auth.isSignedIn() && !Auth.isVerified()) {
+            Verification._renderStep();
+        }
+    },
+
+    // Feed page: initialize composer and infinite scroll
+    feed: () => {
+        Posts.initComposer();
+        Posts.initInfiniteScroll();
+    },
+
+    // Messages page: start listening to conversations
+    messages: () => {
+        Messaging.listenToConversations();
+    },
+
+    // Conversation page: listen to messages + init input
+    conversation: (params) => {
+        Messaging.listenToConversations();
+        Messaging.listenToMessages(params.id);
+        Messaging.initChatInput(params.id);
+    },
+
+    // Person profile: init message button + post composer
+    person: (params) => {
+        // Message button handler
+        const msgBtn = document.getElementById('profile-message-btn');
+        if (msgBtn) {
+            msgBtn.addEventListener('click', async () => {
+                const otherUid = msgBtn.dataset.uid;
+                const otherName = msgBtn.dataset.name;
+                const otherPhoto = msgBtn.dataset.photo;
+                const otherTmdbId = Number(msgBtn.dataset.tmdbId);
+
+                const convId = await Messaging.openConversation(otherUid, otherName, otherPhoto, otherTmdbId);
+                if (convId) {
+                    Router.navigate(`/messages/${convId}`);
+                }
+            });
+        }
+
+        // Edit profile button handler
+        const editBtn = document.getElementById('profile-edit-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', () => {
+                Router.navigate('/settings');
+            });
+        }
+
+        // Post composer
+        if (Auth.ownsProfile(params.id)) {
+            Posts.initComposer();
+        }
+    },
+
+    // Settings: save handlers
+    settings: () => {
+        const saveBtn = document.getElementById('settings-save-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async () => {
+                const bio = document.getElementById('settings-bio')?.value?.trim() || null;
+                const photoInput = document.getElementById('settings-photo');
+                const dmEmail = document.getElementById('settings-dm-email')?.checked ?? true;
+
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+
+                try {
+                    const tmdbId = Auth.getTmdbId();
+                    if (!tmdbId || !db) throw new Error('Not verified');
+
+                    const profileUpdate = { customBio: bio };
+
+                    // Upload photo if selected
+                    if (photoInput?.files?.[0]) {
+                        const file = photoInput.files[0];
+                        if (file.size > 5 * 1024 * 1024) {
+                            Components.toast('Photo must be under 5MB', 'error');
+                            saveBtn.disabled = false;
+                            saveBtn.textContent = 'Save Changes';
+                            return;
+                        }
+                        const path = `ss_profiles/${tmdbId}/photo_${Date.now()}.jpg`;
+                        const ref = storage.ref(path);
+                        await ref.put(file);
+                        profileUpdate.customPhotoUrl = await ref.getDownloadURL();
+                    }
+
+                    await db.collection('ss_profiles').doc(String(tmdbId)).update(profileUpdate);
+
+                    // Update notification prefs
+                    await db.collection('ss_users').doc(Auth.getUid()).update({
+                        'notificationPrefs.dmEmail': dmEmail
+                    });
+
+                    Components.toast('Settings saved!', 'success');
+                } catch (err) {
+                    console.error('Save settings failed:', err);
+                    Components.toast('Failed to save: ' + err.message, 'error');
+                }
+
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Changes';
+            });
+        }
+    },
+
+    // Search: handle form submission
+    search: () => {
+        const form = document.querySelector('.search-form');
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const q = form.querySelector('input[name="q"]')?.value?.trim();
+                if (q) Router.navigate(`/search?q=${encodeURIComponent(q)}`);
+            });
+        }
+    }
+};
+
+// ==========================================
+// SEARCH OVERLAY
+// ==========================================
+const SearchOverlay = {
+    _debounce: null,
+
+    init() {
+        const toggle = document.querySelector('.nav-search-toggle');
+        const overlay = document.querySelector('.search-overlay');
+        const input = overlay?.querySelector('.search-input');
+        const close = overlay?.querySelector('.search-close');
+        const results = overlay?.querySelector('.search-results');
+
+        if (!toggle || !overlay) return;
+
+        toggle.addEventListener('click', () => {
+            overlay.style.display = 'flex';
+            input?.focus();
+        });
+
+        close?.addEventListener('click', () => {
+            overlay.style.display = 'none';
+            if (input) input.value = '';
+            if (results) results.innerHTML = '';
+        });
+
+        // Close on ESC
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overlay.style.display !== 'none') {
+                overlay.style.display = 'none';
+                if (input) input.value = '';
+                if (results) results.innerHTML = '';
+            }
+        });
+
+        // Search as you type
+        input?.addEventListener('input', () => {
+            clearTimeout(this._debounce);
+            const q = input.value.trim();
+
+            if (q.length < 2) {
+                if (results) results.innerHTML = '';
+                return;
+            }
+
+            this._debounce = setTimeout(async () => {
+                if (results) results.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
+
+                try {
+                    const data = await API.searchPeople(q);
+                    const people = (data.results || []).slice(0, 8);
+
+                    if (people.length === 0) {
+                        results.innerHTML = '<p class="text-secondary text-center" style="padding:2rem">No results found</p>';
+                        return;
+                    }
+
+                    results.innerHTML = people.map(p => Components.searchResultItem(p)).join('');
+
+                    // Click to navigate
+                    results.querySelectorAll('.search-result-item').forEach(item => {
+                        item.addEventListener('click', () => {
+                            const personId = item.dataset.personId;
+                            const slug = item.dataset.slug;
+                            overlay.style.display = 'none';
+                            input.value = '';
+                            results.innerHTML = '';
+                            Router.navigate(`/person/${personId}/${slug}`);
+                        });
+                    });
+                } catch (e) {
+                    results.innerHTML = '<p class="text-secondary text-center" style="padding:2rem">Search failed</p>';
+                }
+            }, 300);
+        });
+
+        // Enter to go to search page
+        input?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const q = input.value.trim();
+                if (q) {
+                    overlay.style.display = 'none';
+                    input.value = '';
+                    if (results) results.innerHTML = '';
+                    Router.navigate(`/search?q=${encodeURIComponent(q)}`);
+                }
+            }
+        });
+    }
+};
+
+// ==========================================
+// MOBILE NAV
+// ==========================================
+const MobileNav = {
+    init() {
+        const toggle = document.querySelector('.nav-mobile-toggle');
+        const menu = document.querySelector('.nav-mobile-menu');
+        if (!toggle || !menu) return;
+
+        toggle.addEventListener('click', () => {
+            const isOpen = menu.style.display !== 'none';
+            menu.style.display = isOpen ? 'none' : 'flex';
+            toggle.classList.toggle('active', !isOpen);
+        });
+
+        // Close on route change
+        Router.onRouteChange(() => {
+            menu.style.display = 'none';
+            toggle.classList.remove('active');
+        });
+    }
+};
+
+// ==========================================
+// APP INITIALIZATION
+// ==========================================
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize auth first (wait for auth state)
+    await Auth.init();
+
+    // Start conversation listener if verified
+    if (Auth.isVerified()) {
+        Messaging.listenToConversations();
+    }
+
+    // Initialize search overlay
+    SearchOverlay.init();
+
+    // Initialize mobile nav
+    MobileNav.init();
+
+    // Initialize router (renders initial page)
+    Router.init();
+
+    console.log('🎬 Screenshoe initialized');
+});

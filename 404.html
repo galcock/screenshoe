@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Screenshoe — The Industry Talks Here | Social Network for Film & TV Professionals</title>
+  <meta name="description" content="The exclusive social network for verified Hollywood and film & television professionals. Connect with actors, directors, writers, producers, and crew. Every member is identity-verified.">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="index,follow">
+  <meta name="author" content="Screenshoe">
+
+  <!-- Favicon -->
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://image.tmdb.org">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Screenshoe — The Industry Talks Here | Social Network for Film & TV Professionals">
+  <meta property="og:description" content="The exclusive social network for verified Hollywood and film & television professionals. Connect with actors, directors, writers, producers, and crew.">
+  <meta property="og:url" content="https://screenshoe.com">
+  <meta property="og:image" content="https://screenshoe.com/og-image.png">
+  <meta property="og:site_name" content="Screenshoe">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Screenshoe — The Industry Talks Here | Social Network for Film & TV Professionals">
+  <meta name="twitter:description" content="The exclusive social network for verified Hollywood and film & television professionals. Connect with actors, directors, writers, producers, and crew.">
+  <meta name="twitter:image" content="https://screenshoe.com/og-image.png">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Firebase Compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css?v=1">
+
+  <!-- SPA redirect: save the path and redirect to index -->
+  <script>
+    // Preserve the current path for the SPA router to pick up after redirect
+    sessionStorage.setItem('screenshoe-redirect-path', window.location.pathname + window.location.search + window.location.hash);
+    window.location.replace('/');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <span class="nav-logo-icon">🎬</span>
+        <span class="nav-logo-text">Screen<span class="nav-logo-accent">shoe</span></span>
+      </a>
+      <div class="nav-links">
+        <a href="/discover" class="nav-link">Discover</a>
+        <a href="/feed" class="nav-link">Feed</a>
+        <a href="/messages" class="nav-link nav-link-auth" style="display:none">Messages <span class="nav-unread-badge" style="display:none"></span></a>
+      </div>
+      <div class="nav-actions">
+        <div class="nav-search-toggle">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </div>
+        <a href="/login" class="nav-link nav-link-guest">Sign In</a>
+        <div class="nav-user nav-link-auth" style="display:none">
+          <img class="nav-user-avatar" src="" alt="">
+          <div class="nav-user-dropdown" style="display:none">
+            <a href="/profile">My Profile</a>
+            <a href="/settings">Settings</a>
+            <a href="#" id="nav-signout">Sign Out</a>
+          </div>
+        </div>
+        <button class="nav-mobile-toggle" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+    <!-- Mobile menu -->
+    <div class="nav-mobile-menu" style="display:none">
+      <a href="/discover" class="nav-mobile-link">Discover</a>
+      <a href="/feed" class="nav-mobile-link">Feed</a>
+      <a href="/messages" class="nav-mobile-link nav-link-auth" style="display:none">Messages</a>
+      <a href="/login" class="nav-mobile-link nav-link-guest">Sign In</a>
+    </div>
+  </nav>
+
+  <!-- Search overlay -->
+  <div class="search-overlay" style="display:none">
+    <div class="search-overlay-inner">
+      <input type="text" class="search-input" placeholder="Search people in film &amp; television...">
+      <button class="search-close">&times;</button>
+    </div>
+    <div class="search-results"></div>
+  </div>
+
+  <noscript>
+    <div style="padding:40px;text-align:center;">
+      <h1>Screenshoe — The Industry Talks Here</h1>
+      <p>The first social network exclusively for verified film & television professionals. Browse profiles of actors, directors, writers, producers, cinematographers, and crew from Hollywood and worldwide.</p>
+      <p>Discover people like Brad Pitt, Steven Spielberg, Meryl Streep, and thousands more. Every member is identity-verified.</p>
+      <p><a href="https://freshkernels.com">Visit Fresh Kernels</a> for movie and TV ratings.</p>
+    </div>
+  </noscript>
+
+  <main id="app"></main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="footer-logo">🎬 Screenshoe</span>
+        <p class="footer-tagline">The first social network exclusively for verified film &amp; television professionals.</p>
+      </div>
+      <div class="footer-links">
+        <a href="/about">About</a>
+        <a href="/discover">Discover</a>
+        <a href="https://freshkernels.com" target="_blank">Fresh Kernels</a>
+      </div>
+      <div class="footer-legal">
+        <p>&copy; 2026 Screenshoe. All data powered by <a href="https://freshkernels.com" target="_blank">Fresh Kernels</a> &amp; <a href="https://tmdb.org" target="_blank">TMDB</a>.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="api.js?v=1"></script>
+  <script src="firebase-config.js?v=1"></script>
+  <script src="auth.js?v=1"></script>
+  <script src="components.js?v=1"></script>
+  <script src="verification.js?v=1"></script>
+  <script src="messaging.js?v=1"></script>
+  <script src="posts.js?v=1"></script>
+  <script src="seo.js?v=1"></script>
+  <script src="router.js?v=1"></script>
+  <script src="app.js?v=1"></script>
+
+</body>
+</html>
