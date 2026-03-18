@@ -102,6 +102,10 @@ body {
   min-height: 100vh;
 }
 
+#app {
+  padding-top: var(--nav-height);
+}
+
 a {
   color: var(--brand-accent);
   text-decoration: none;
@@ -565,7 +569,6 @@ p {
   justify-content: center;
   text-align: center;
   padding: var(--spacing-3xl) var(--spacing-xl);
-  margin-top: var(--nav-height);
   position: relative;
   overflow: hidden;
 }
@@ -665,9 +668,33 @@ p {
 }
 
 .hero-members {
+  margin-top: var(--spacing-xl);
   display: flex;
+  align-items: center;
   justify-content: center;
-  margin-top: var(--spacing-2xl);
+  gap: var(--spacing-md);
+}
+
+.hero-members-text {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.hero-members-avatars {
+  display: flex;
+}
+
+.hero-member-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--bg-primary);
+  margin-left: -8px;
+  object-fit: cover;
+}
+
+.hero-member-avatar:first-child {
+  margin-left: 0;
 }
 
 .hero-members-photo {
@@ -683,12 +710,12 @@ p {
   margin-left: 0;
 }
 
-.hero-members-text {
-  color: var(--text-tertiary);
-  font-size: 0.85rem;
-  margin-left: var(--spacing-md);
+.hero-cta-row {
   display: flex;
-  align-items: center;
+  gap: var(--spacing-md);
+  justify-content: center;
+  margin-top: var(--spacing-xl);
+  flex-wrap: wrap;
 }
 
 
@@ -785,18 +812,64 @@ p {
   gap: var(--spacing-lg);
 }
 
+/* BEM-style class compatibility (used by Components.personCard) */
+.person-card__photo-wrap {
+  position: relative;
+  display: inline-block;
+  margin-bottom: var(--spacing-md);
+}
+
+.person-card__photo {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+}
+
+.person-card__photo--fallback {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.person-card__name {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+}
+
+.person-card__dept {
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 
 /* ==========================================================================
    8. Person Profile Page (.profile)
    ========================================================================== */
 
 .profile {
-  padding-top: var(--nav-height);
 }
 
 .profile-hero {
   position: relative;
-  height: 260px;
+  height: auto;
+  padding-top: 2rem;
+  padding-bottom: 2rem;
   background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 50%, var(--bg-secondary) 100%);
   overflow: hidden;
 }
@@ -815,12 +888,33 @@ p {
   opacity: 0.3;
 }
 
+.profile-hero-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.25;
+  filter: blur(2px);
+}
+
+.profile-hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(5,5,8,0.5) 0%, var(--bg-primary) 100%);
+  z-index: 1;
+}
+
+.profile-hero > .container {
+  position: relative;
+  z-index: 2;
+}
+
 .profile-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--spacing-xl);
   max-width: var(--max-width-narrow);
-  margin: -60px auto 0;
+  margin: 0 auto;
   padding: 0 var(--spacing-xl);
   position: relative;
   z-index: 1;
@@ -912,8 +1006,9 @@ p {
 
 .profile-actions {
   display: flex;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   margin-top: var(--spacing-lg);
+  flex-wrap: wrap;
 }
 
 .profile-content {
@@ -932,7 +1027,8 @@ p {
 
 .profile-section-title {
   font-family: var(--font-display);
-  font-size: 1.3rem;
+  font-size: 1.5rem;
+  font-weight: 600;
   margin-bottom: var(--spacing-lg);
 }
 
@@ -1178,7 +1274,6 @@ p {
 .messages-layout {
   display: flex;
   height: calc(100vh - var(--nav-height));
-  margin-top: var(--nav-height);
 }
 
 .messages-sidebar {
@@ -1423,7 +1518,7 @@ p {
   max-width: var(--max-width-narrow);
   margin: 0 auto;
   padding: var(--spacing-3xl) var(--spacing-xl);
-  padding-top: calc(var(--nav-height) + var(--spacing-3xl));
+  padding-top: var(--spacing-3xl);
 }
 
 .verify-title {
@@ -1576,7 +1671,7 @@ p {
   max-width: var(--max-width-narrow);
   margin: 0 auto;
   padding: var(--spacing-xl);
-  padding-top: calc(var(--nav-height) + var(--spacing-xl));
+  padding-top: var(--spacing-xl);
 }
 
 .feed-header {
@@ -1597,7 +1692,6 @@ p {
   max-width: var(--max-width);
   margin: 0 auto;
   padding: var(--spacing-xl);
-  padding-top: calc(var(--nav-height) + var(--spacing-xl));
 }
 
 .discover-header {
@@ -1655,7 +1749,6 @@ p {
   max-width: var(--max-width-narrow);
   margin: 0 auto;
   padding: var(--spacing-xl);
-  padding-top: calc(var(--nav-height) + var(--spacing-xl));
 }
 
 .settings-title {
@@ -1769,7 +1862,6 @@ p {
   max-width: var(--max-width);
   margin: 0 auto;
   padding: var(--spacing-xl);
-  padding-top: calc(var(--nav-height) + var(--spacing-xl));
 }
 
 .admin-title {
@@ -2377,7 +2469,6 @@ p {
   align-items: center;
   justify-content: center;
   min-height: calc(100vh - var(--nav-height));
-  padding-top: var(--nav-height);
 }
 
 
@@ -2812,6 +2903,235 @@ p {
     padding-left: var(--spacing-md);
     padding-right: var(--spacing-md);
   }
+
+  /* Department grid */
+  .department-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Profile mobile */
+  .profile-header {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .profile-name {
+    justify-content: center;
+  }
+
+  .profile-actions {
+    justify-content: center;
+  }
+}
+
+
+/* ==========================================================================
+   25b. Additional Component Styles
+   ========================================================================== */
+
+/* Department browse grid */
+.department-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+}
+
+.department-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg) var(--spacing-md);
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: transform 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.department-card:hover {
+  border-color: var(--brand-accent);
+  transform: translateY(-2px);
+  background: var(--bg-elevated);
+}
+
+.department-icon {
+  font-size: 2rem;
+}
+
+.department-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Profile subsection & meta */
+.profile-subsection-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: var(--spacing-xl) 0 var(--spacing-md);
+  color: var(--text-secondary);
+}
+
+.profile-meta {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: var(--spacing-xs);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.profile-links {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.profile-photo-placeholder {
+  width: 120px;
+  height: 120px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  border: 4px solid var(--bg-primary);
+}
+
+/* Filmography list */
+.filmography-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+}
+
+/* Section headings */
+.page-title {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: var(--spacing-sm);
+}
+
+.section-heading {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: var(--spacing-lg);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--spacing-lg);
+}
+
+.section-link {
+  color: var(--brand-accent);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.section-link:hover {
+  text-decoration: underline;
+}
+
+/* Claim profile CTA */
+.claim-cta {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  margin: var(--spacing-2xl) 0;
+  text-align: center;
+}
+
+.claim-cta h3 {
+  font-family: var(--font-display);
+  margin-bottom: var(--spacing-sm);
+}
+
+.claim-cta p {
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-lg);
+}
+
+/* Feed posts container */
+.feed-posts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+/* Comments */
+.comments-section {
+  margin-top: var(--spacing-2xl);
+}
+
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.comment-item {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.comment-author-photo {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.comment-author-photo-placeholder {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.comment-body {
+  flex: 1;
+}
+
+.comment-author-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.comment-text {
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.comment-time {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  margin-top: var(--spacing-xs);
+  display: block;
+}
+
+.comment-composer {
+  display: flex;
+  flex-direction: column;
 }
 
 
@@ -2927,7 +3247,6 @@ p {
    ========================================================================== */
 
 .about {
-  padding-top: var(--nav-height);
 }
 
 .about-hero {
