@@ -324,36 +324,74 @@ const Pages = {
             posts = await Posts.loadPersonPosts(id, 10);
         }
 
-        // Build filmography
-        const movieCredits = person.movie_credits?.cast || [];
-        const tvCredits = person.tv_credits?.cast || [];
-        const crewCredits = [
-            ...(person.movie_credits?.crew || []),
-            ...(person.tv_credits?.crew || [])
-        ];
+        // ----- Build combined credits (FK-style) -----
+        // Map movie cast credits
+        const movieCredits = (person.movie_credits?.cast || []).map(c => ({
+            ...c,
+            type: 'movie',
+            title: c.title,
+            date: c.release_date,
+            role: 'Acting',
+            roleDetail: c.character || ''
+        }));
 
-        // Sort by date, most recent first
-        const sortedMovies = [...movieCredits].sort((a, b) => {
-            const dateA = a.release_date || '';
-            const dateB = b.release_date || '';
-            return dateB.localeCompare(dateA);
-        }).slice(0, 20);
+        // Map TV cast credits
+        const tvCredits = (person.tv_credits?.cast || []).map(c => ({
+            ...c,
+            type: 'tv',
+            title: c.name,
+            date: c.first_air_date,
+            role: 'Acting',
+            roleDetail: c.character || ''
+        }));
 
-        const sortedTV = [...tvCredits].sort((a, b) => {
-            const dateA = a.first_air_date || '';
-            const dateB = b.first_air_date || '';
-            return dateB.localeCompare(dateA);
-        }).slice(0, 20);
+        // Map crew credits with deduplication by id+job
+        const seenCrewKeys = new Set();
+        const crewCredits = [];
+        const movieCrew = (person.movie_credits?.crew || []).map(c => ({ ...c, type: 'movie' }));
+        const tvCrew = (person.tv_credits?.crew || []).map(c => ({ ...c, type: 'tv' }));
+        [...movieCrew, ...tvCrew].forEach(c => {
+            const key = `${c.id}-${c.job}`;
+            if (seenCrewKeys.has(key)) return;
+            seenCrewKeys.add(key);
+            crewCredits.push({
+                id: c.id,
+                type: c.type,
+                title: c.title || c.name,
+                date: c.release_date || c.first_air_date,
+                poster_path: c.poster_path,
+                vote_average: c.vote_average,
+                vote_count: c.vote_count,
+                genre_ids: c.genre_ids,
+                role: c.job === 'Director' ? 'Directing' : c.job === 'Producer' || c.job === 'Executive Producer' ? 'Producing' : c.department || 'Crew',
+                roleDetail: c.job
+            });
+        });
 
-        // For crew members (directors, writers, etc), show crew credits
-        const isCrewPrimary = ['Directing', 'Writing', 'Production', 'Sound', 'Camera', 'Art', 'Editing', 'Visual Effects']
-            .includes(person.known_for_department);
+        // Combine and sort by date descending
+        const allCredits = [...movieCredits, ...tvCredits, ...crewCredits]
+            .sort((a, b) => {
+                const dateA = a.date ? new Date(a.date) : new Date(0);
+                const dateB = b.date ? new Date(b.date) : new Date(0);
+                return dateB - dateA;
+            });
 
-        const sortedCrew = isCrewPrimary ? [...crewCredits].sort((a, b) => {
-            const dateA = a.release_date || a.first_air_date || '';
-            const dateB = b.release_date || b.first_air_date || '';
-            return dateB.localeCompare(dateA);
-        }).slice(0, 20) : [];
+        // Store for client-side filter/sort
+        window._ssFilmographyCredits = allCredits;
+        window._ssFilmographySortMode = 'date';
+        window._ssFilmographyTypeFilter = 'all';
+
+        // Merge duplicates for initial view
+        const initialCredits = this._ssMergeFilmographyCredits(allCredits);
+
+        // ----- Compute stats -----
+        const totalCredits = allCredits.length;
+        const movieCount = allCredits.filter(c => c.type === 'movie').length;
+        const tvCount = allCredits.filter(c => c.type === 'tv').length;
+        const ratingsArr = allCredits.filter(c => c.vote_average && c.vote_average > 0).map(c => c.vote_average);
+        const avgRating = ratingsArr.length > 0
+            ? (ratingsArr.reduce((sum, r) => sum + r, 0) / ratingsArr.length).toFixed(1)
+            : null;
 
         const bio = profileData?.customBio || person.biography || '';
         const photoUrl = profileData?.customPhotoUrl ||
@@ -368,6 +406,18 @@ const Pages = {
         // Fresh Kernels link
         const fkSlug = API.generateSlug(person.name);
         const fkUrl = `https://freshkernels.com/person/${id}/${fkSlug}`;
+
+        // External links
+        const extIds = person.external_ids || {};
+        const externalLinks = [];
+        if (extIds.imdb_id) externalLinks.push({ label: 'IMDb', url: `https://www.imdb.com/name/${extIds.imdb_id}` });
+        if (extIds.instagram_id) externalLinks.push({ label: 'Instagram', url: `https://instagram.com/${extIds.instagram_id}` });
+        if (extIds.twitter_id) externalLinks.push({ label: 'X / Twitter', url: `https://x.com/${extIds.twitter_id}` });
+        if (extIds.facebook_id) externalLinks.push({ label: 'Facebook', url: `https://facebook.com/${extIds.facebook_id}` });
+        if (extIds.tiktok_id) externalLinks.push({ label: 'TikTok', url: `https://tiktok.com/@${extIds.tiktok_id}` });
+        if (extIds.youtube_id) externalLinks.push({ label: 'YouTube', url: `https://youtube.com/${extIds.youtube_id}` });
+        if (extIds.wikidata_id) externalLinks.push({ label: 'Wikidata', url: `https://www.wikidata.org/wiki/${extIds.wikidata_id}` });
+        externalLinks.push({ label: 'Fresh Kernels', url: fkUrl });
 
         return `
             <!-- Profile Hero -->
@@ -398,6 +448,28 @@ const Pages = {
                                 </div>
                             ` : ''}
 
+                            <!-- Stats Row -->
+                            <div class="person-stats-row">
+                                <div class="person-stat-item">
+                                    <div class="person-stat-value">${totalCredits}</div>
+                                    <div class="person-stat-label">Credits</div>
+                                </div>
+                                <div class="person-stat-item">
+                                    <div class="person-stat-value">${movieCount}</div>
+                                    <div class="person-stat-label">Movies</div>
+                                </div>
+                                <div class="person-stat-item">
+                                    <div class="person-stat-value">${tvCount}</div>
+                                    <div class="person-stat-label">TV Shows</div>
+                                </div>
+                                ${avgRating ? `
+                                <div class="person-stat-item">
+                                    <div class="person-stat-value">${avgRating}</div>
+                                    <div class="person-stat-label">Avg Rating</div>
+                                </div>
+                                ` : ''}
+                            </div>
+
                             <div class="profile-actions">
                                 ${isVerified && Auth.isVerified() && !isOwner ? `
                                     <button class="btn btn-primary" id="profile-message-btn" data-uid="${profileData?.claimedBy}" data-name="${person.name}" data-photo="${photoUrl}" data-tmdb-id="${id}">
@@ -426,6 +498,13 @@ const Pages = {
                     </section>
                 ` : ''}
 
+                <!-- External Links -->
+                ${externalLinks.length > 0 ? `
+                    <div class="person-external-links">
+                        ${externalLinks.map(l => `<a href="${l.url}" target="_blank" rel="noopener noreferrer" class="person-external-link">${l.label}</a>`).join('')}
+                    </div>
+                ` : ''}
+
                 ${!isClaimed ? Components.claimProfileCTA(person) : ''}
 
                 <!-- Posts (verified users only) -->
@@ -446,47 +525,129 @@ const Pages = {
                 ` : ''}
 
                 <!-- Filmography -->
-                ${sortedMovies.length > 0 || sortedTV.length > 0 || sortedCrew.length > 0 ? `
-                    <section class="profile-section">
+                ${allCredits.length > 0 ? `
+                    <section class="profile-section filmography-section">
                         <h2 class="profile-section-title">Filmography</h2>
 
-                        ${isCrewPrimary && sortedCrew.length > 0 ? `
-                            <h3 class="profile-subsection-title">As ${person.known_for_department === 'Directing' ? 'Director' : person.known_for_department === 'Writing' ? 'Writer' : person.known_for_department}</h3>
-                            <div class="filmography-list">
-                                ${sortedCrew.map(c => Components.filmographyItem(c, c.title ? 'movie' : 'tv')).join('')}
+                        <div class="filmography-controls">
+                            <div class="filmography-type-toggle">
+                                <button class="sort-toggle-btn active" data-type="all" onclick="Pages.ssSetFilmographyType('all')">All</button>
+                                <button class="sort-toggle-btn" data-type="movie" onclick="Pages.ssSetFilmographyType('movie')">Movies</button>
+                                <button class="sort-toggle-btn" data-type="tv" onclick="Pages.ssSetFilmographyType('tv')">TV</button>
                             </div>
-                        ` : ''}
-
-                        ${sortedMovies.length > 0 ? `
-                            <h3 class="profile-subsection-title">${isCrewPrimary ? 'Acting — ' : ''}Movies</h3>
-                            <div class="filmography-list">
-                                ${sortedMovies.map(c => Components.filmographyItem(c, 'movie')).join('')}
+                            <div class="filmography-sort-toggle">
+                                <button class="sort-toggle-btn active" data-sort="date" onclick="Pages.ssSetFilmographySort('date')">Date</button>
+                                <button class="sort-toggle-btn" data-sort="rating" onclick="Pages.ssSetFilmographySort('rating')">Rating</button>
                             </div>
-                        ` : ''}
+                        </div>
 
-                        ${sortedTV.length > 0 ? `
-                            <h3 class="profile-subsection-title">${isCrewPrimary ? 'Acting — ' : ''}Television</h3>
-                            <div class="filmography-list">
-                                ${sortedTV.map(c => Components.filmographyItem(c, 'tv')).join('')}
-                            </div>
-                        ` : ''}
-                    </section>
-                ` : ''}
-
-                <!-- External Links -->
-                ${person.external_ids ? `
-                    <section class="profile-section">
-                        <h2 class="profile-section-title">Links</h2>
-                        <div class="profile-links">
-                            ${person.external_ids.imdb_id ? `<a href="https://www.imdb.com/name/${person.external_ids.imdb_id}" target="_blank" class="btn btn-secondary btn-sm">IMDb</a>` : ''}
-                            ${person.external_ids.instagram_id ? `<a href="https://instagram.com/${person.external_ids.instagram_id}" target="_blank" class="btn btn-secondary btn-sm">Instagram</a>` : ''}
-                            ${person.external_ids.twitter_id ? `<a href="https://x.com/${person.external_ids.twitter_id}" target="_blank" class="btn btn-secondary btn-sm">X / Twitter</a>` : ''}
-                            <a href="${fkUrl}" target="_blank" class="btn btn-secondary btn-sm">Fresh Kernels</a>
+                        <div id="ss-filmography-grid">
+                            ${this.ssRenderFilmographyGrid(initialCredits)}
                         </div>
                     </section>
                 ` : ''}
             </div>
         `;
+    },
+
+    // ==========================================
+    // FILMOGRAPHY HELPERS (Screenshoe person page)
+    // ==========================================
+
+    ssRenderFilmographyGrid(credits) {
+        if (!credits || credits.length === 0) {
+            return '<p style="color:var(--text-secondary);text-align:center">No credits found</p>';
+        }
+        return `<div class="filmography-list">${credits.map(c => {
+            const type = c.type === 'tv' ? 'tv' : 'movie';
+            const title = c.title || 'Untitled';
+            const slug = API.generateSlug(title);
+            const href = `https://freshkernels.com/${type}/${slug}-${c.id}`;
+            const posterUrl = API.posterUrl(c.poster_path, 'small');
+            const year = c.date ? c.date.substring(0, 4) : '';
+            const rating = c.vote_average ? c.vote_average.toFixed(1) : '';
+            const roleDisplay = c.roleDetail || c.role || '';
+
+            const posterHtml = posterUrl
+                ? `<img class="filmography-item__poster" src="${posterUrl}" alt="${Components._esc(title)}" loading="lazy">`
+                : `<div class="filmography-item__poster filmography-item__poster--fallback">${Components.icons.image}</div>`;
+
+            return `<a href="${href}" class="filmography-item" target="_blank" rel="noopener noreferrer">
+                <div class="filmography-item__poster-wrap">${posterHtml}</div>
+                <div class="filmography-item__info">
+                    <span class="filmography-item__title">${Components._esc(title)}</span>
+                    ${roleDisplay ? `<span class="filmography-item__role">${Components._esc(roleDisplay)}</span>` : ''}
+                    <div class="filmography-item__meta">
+                        ${year ? `<span class="filmography-item__year">${year}</span>` : ''}
+                        ${rating ? `<span class="filmography-item__rating">★ ${rating}</span>` : ''}
+                    </div>
+                </div>
+            </a>`;
+        }).join('')}</div>`;
+    },
+
+    ssSetFilmographySort(mode) {
+        window._ssFilmographySortMode = mode;
+        document.querySelectorAll('.filmography-sort-toggle .sort-toggle-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.sort === mode);
+        });
+        this.ssApplyFilmographyFilters();
+    },
+
+    ssSetFilmographyType(type) {
+        window._ssFilmographyTypeFilter = type;
+        document.querySelectorAll('.filmography-type-toggle .sort-toggle-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.type === type);
+        });
+        this.ssApplyFilmographyFilters();
+    },
+
+    _ssMergeFilmographyCredits(credits) {
+        const merged = new Map();
+        for (const c of credits) {
+            const key = `${c.type}-${c.id}`;
+            if (merged.has(key)) {
+                const existing = merged.get(key);
+                if (c.roleDetail && !existing._allRoles.includes(c.roleDetail)) {
+                    existing._allRoles.push(c.roleDetail);
+                    existing.roleDetail = existing._allRoles.join(', ');
+                }
+                if ((c.vote_average || 0) > (existing.vote_average || 0)) existing.vote_average = c.vote_average;
+            } else {
+                merged.set(key, { ...c, _allRoles: [c.roleDetail || c.role || ''] });
+            }
+        }
+        return Array.from(merged.values());
+    },
+
+    ssApplyFilmographyFilters() {
+        const container = document.getElementById('ss-filmography-grid');
+        if (!container) return;
+
+        let credits = [...(window._ssFilmographyCredits || [])];
+        const typeFilter = window._ssFilmographyTypeFilter || 'all';
+        const sortMode = window._ssFilmographySortMode || 'date';
+
+        // Type filter
+        if (typeFilter !== 'all') {
+            credits = credits.filter(c => c.type === typeFilter);
+        }
+
+        // Merge duplicates
+        credits = this._ssMergeFilmographyCredits(credits);
+
+        // Sort
+        if (sortMode === 'rating') {
+            credits.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+        } else {
+            credits.sort((a, b) => {
+                const dateA = a.date ? new Date(a.date) : new Date(0);
+                const dateB = b.date ? new Date(b.date) : new Date(0);
+                return dateB - dateA;
+            });
+        }
+
+        container.innerHTML = this.ssRenderFilmographyGrid(credits);
     },
 
     // ==========================================

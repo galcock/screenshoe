@@ -1,10 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect x="2" y="8" width="28" height="22" rx="2" fill="#7b68ee"/>
-  <rect x="2" y="2" width="28" height="8" rx="2" fill="#1a1a28"/>
-  <rect x="2" y="2" width="28" height="8" rx="2" fill="#1a1a28" stroke="#7b68ee" stroke-width="1"/>
-  <line x1="8" y1="2" x2="12" y2="10" stroke="#7b68ee" stroke-width="1.5"/>
-  <line x1="16" y1="2" x2="20" y2="10" stroke="#7b68ee" stroke-width="1.5"/>
-  <line x1="24" y1="2" x2="28" y2="10" stroke="#7b68ee" stroke-width="1.5"/>
-  <circle cx="16" cy="20" r="5" fill="none" stroke="white" stroke-width="1.5"/>
-  <polygon points="14,17.5 14,22.5 19,20" fill="white"/>
+  <!-- Film slate / clapperboard -->
+  <rect x="2" y="10" width="28" height="20" rx="2" fill="#7b68ee"/>
+  <path d="M2,10 L30,10 L30,6 C30,4.9 29.1,4 28,4 L4,4 C2.9,4 2,4.9 2,6 Z" fill="#1a1a28" stroke="#7b68ee" stroke-width="0.5"/>
+  <line x1="7" y1="4" x2="11" y2="10" stroke="#7b68ee" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="15" y1="4" x2="19" y2="10" stroke="#7b68ee" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="23" y1="4" x2="27" y2="10" stroke="#7b68ee" stroke-width="1.8" stroke-linecap="round"/>
+  <rect x="6" y="14" width="20" height="2" rx="1" fill="rgba(255,255,255,0.3)"/>
+  <rect x="6" y="19" width="14" height="2" rx="1" fill="rgba(255,255,255,0.2)"/>
+  <rect x="6" y="24" width="10" height="2" rx="1" fill="rgba(255,255,255,0.15)"/>
 </svg>

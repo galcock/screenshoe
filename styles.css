@@ -51,9 +51,9 @@
   --spacing-sm: 0.5rem;
   --spacing-md: 1rem;
   --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
-  --spacing-2xl: 3rem;
-  --spacing-3xl: 4rem;
+  --spacing-xl: 1.5rem;
+  --spacing-2xl: 2rem;
+  --spacing-3xl: 2.5rem;
 
   /* Radii */
   --radius-sm: 6px;
@@ -562,13 +562,13 @@ p {
    ========================================================================== */
 
 .hero {
-  min-height: calc(100vh - var(--nav-height));
+  min-height: 60vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: var(--spacing-3xl) var(--spacing-xl);
+  padding: var(--spacing-xl) var(--spacing-md);
   position: relative;
   overflow: hidden;
 }
@@ -1014,11 +1014,11 @@ p {
 .profile-content {
   max-width: var(--max-width-narrow);
   margin: 0 auto;
-  padding: var(--spacing-2xl) var(--spacing-xl);
+  padding: var(--spacing-lg) var(--spacing-xl);
 }
 
 .profile-section {
-  padding: var(--spacing-2xl) 0;
+  padding: var(--spacing-lg) 0;
 }
 
 .profile-section + .profile-section {
@@ -2651,7 +2651,71 @@ p {
 
 
 /* ==========================================================================
-   25. Responsive Breakpoints
+   25. Footer
+   ========================================================================== */
+
+.footer {
+  border-top: 1px solid var(--glass-border);
+}
+
+.footer-inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--spacing-2xl) var(--spacing-xl);
+  text-align: center;
+}
+
+.footer-brand {
+  margin-bottom: var(--spacing-md);
+}
+
+.footer-logo {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.footer-tagline {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: var(--spacing-xs);
+}
+
+.footer-links {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.footer-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: color 0.2s;
+}
+
+.footer-links a:hover {
+  color: var(--text-primary);
+}
+
+.footer-legal {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.footer-legal a {
+  color: var(--text-tertiary);
+  text-decoration: none;
+}
+
+.footer-legal a:hover {
+  color: var(--text-secondary);
+}
+
+
+/* ==========================================================================
+   26. Responsive Breakpoints
    ========================================================================== */
 
 @media (max-width: 1024px) {
@@ -3005,8 +3069,175 @@ p {
 /* Filmography list */
 .filmography-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: var(--spacing-md);
+}
+
+.filmography-item {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.filmography-item:hover .filmography-item__poster-wrap {
+  opacity: 0.85;
+  transform: translateY(-2px);
+}
+
+.filmography-item__poster-wrap {
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: var(--spacing-xs);
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.filmography-item__poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.filmography-item__poster--fallback {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+.filmography-item__info {
+  padding: 0;
+}
+
+.filmography-item__title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.filmography-item__role {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  display: block;
+}
+
+.filmography-item__meta {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: 0.5rem;
+}
+
+.filmography-item__rating {
+  color: var(--warning);
+}
+
+/* Filmography Controls */
+.filmography-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  align-items: center;
+}
+
+.filmography-type-toggle,
+.filmography-sort-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  padding: 2px;
+}
+
+.sort-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-primary);
+  white-space: nowrap;
+}
+
+.sort-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.sort-toggle-btn.active {
+  background: var(--brand-accent);
+  color: white;
+}
+
+.filmography-section {
+  margin-top: var(--spacing-lg);
+}
+
+.filmography-section h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  margin-bottom: var(--spacing-md);
+}
+
+/* Person Stats Row */
+.person-stats-row {
+  display: flex;
+  gap: var(--spacing-lg);
+  margin: var(--spacing-lg) 0;
+  flex-wrap: wrap;
+}
+
+.person-stat-item {
+  text-align: center;
+}
+
+.person-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.person-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Person External Links */
+.person-external-links {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-md);
+}
+
+.person-external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.person-external-link:hover {
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
 }
 
 /* Section headings */
@@ -3046,8 +3277,8 @@ p {
   background: var(--bg-card);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-xl);
-  margin: var(--spacing-2xl) 0;
+  padding: var(--spacing-lg);
+  margin: var(--spacing-lg) 0;
   text-align: center;
 }
 

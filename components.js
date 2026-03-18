@@ -539,7 +539,7 @@ const Components = {
 
         const slug = API.generateSlug(title);
         const linkType = type === 'tv' ? 'tv' : 'movie';
-        const href = `https://freshkernels.com/${linkType}/${credit.id}/${slug}`;
+        const href = `https://freshkernels.com/${linkType}/${slug}-${credit.id}`;
 
         return `<a href="${href}" class="filmography-item" target="_blank" rel="noopener noreferrer">
             <div class="filmography-item__poster-wrap">${posterHtml}</div>
