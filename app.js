@@ -860,6 +860,25 @@ const Pages = {
         return `<div class="person-card-grid">${people.map(p => Components.personCard(p)).join('')}</div>`;
     },
 
+    _initDiscover() {
+        Pages._discoverLoadInitial();
+        const input = document.getElementById('discover-search-input');
+        if (!input) return;
+        let debounce;
+        input.addEventListener('input', () => {
+            clearTimeout(debounce);
+            debounce = setTimeout(() => {
+                const query = input.value.trim();
+                window._discoverQuery = query;
+                if (query.length < 2) {
+                    Pages._discoverReapplyFilters();
+                } else {
+                    Pages._discoverSearch(query);
+                }
+            }, 300);
+        });
+    },
+
     // Page size for client-side pagination
     _DISCOVER_PAGE_SIZE: 60,
 
@@ -1751,28 +1770,9 @@ Pages._afterRender = {
         }
     },
 
-    // Discover page: search, filter, paginate
-    discover: () => {
-        // Load local index (5,000 people)
-        Pages._discoverLoadInitial();
-
-        const input = document.getElementById('discover-search-input');
-        if (!input) return;
-        let debounce;
-        input.addEventListener('input', () => {
-            clearTimeout(debounce);
-            debounce = setTimeout(() => {
-                const query = input.value.trim();
-                window._discoverQuery = query;
-
-                if (query.length < 2) {
-                    Pages._discoverReapplyFilters();
-                } else {
-                    Pages._discoverSearch(query);
-                }
-            }, 300);
-        });
-    },
+    // Discover page: search, filter, paginate (shared for both routes)
+    discover: () => Pages._initDiscover(),
+    discoverDepartment: () => Pages._initDiscover(),
 
     // Feed page: initialize composer and infinite scroll
     feed: () => {
