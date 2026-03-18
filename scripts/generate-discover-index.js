@@ -3,12 +3,13 @@
  * Generate discover-index.json for Screenshoe
  *
  * 1. Reads FK's people-slim.json + movies.json + tv.json (5,000 people)
- * 2. Fetches additional people from TMDB popular endpoint (500 pages = 10,000 people)
- *    to fill underrepresented departments (Sound, Camera, Art, Editing, VFX, etc.)
- * 3. Builds a compact searchable index with genre associations, credit counts,
+ * 2. Fetches FULL CREW from TMDB movie credits for top-rated movies
+ *    (cinematographers, editors, sound, art, costume, VFX, etc.)
+ * 3. Also fetches TMDB popular people (500 pages) for additional coverage
+ * 4. Builds a compact searchable index with genre associations, credit counts,
  *    and prominence scores.
  *
- * Output: ~1-2MB, loaded once on discover page
+ * Output: ~3-5MB, loaded once on discover page
  */
 
 const fs = require('fs');
@@ -63,6 +64,26 @@ const genreNames = {
     10764: 'Reality', 10765: 'Sci-Fi & Fantasy', 10766: 'Soap',
     10767: 'Talk', 10768: 'War & Politics'
 };
+
+// TMDB job → department normalization
+// TMDB uses granular job titles; we map to our department categories
+function normalizeDepartment(dept) {
+    if (!dept) return '';
+    const d = dept.toLowerCase();
+    if (d === 'acting') return 'Acting';
+    if (d === 'directing') return 'Directing';
+    if (d === 'writing') return 'Writing';
+    if (d === 'production') return 'Production';
+    if (d === 'sound') return 'Sound';
+    if (d === 'camera') return 'Camera';
+    if (d === 'art') return 'Art';
+    if (d === 'editing') return 'Editing';
+    if (d === 'visual effects') return 'Visual Effects';
+    if (d === 'costume & make-up') return 'Costume & Make-Up';
+    if (d === 'crew') return 'Crew';
+    if (d === 'lighting') return 'Lighting';
+    return dept; // keep original if not matched
+}
 
 // Process FK people into index entries
 function processFK(p) {
@@ -139,6 +160,53 @@ function processTMDB(p) {
     };
 }
 
+// Process a crew member extracted from movie credits
+function processCrewMember(personData, crewCredits) {
+    // crewCredits: array of { movieId, movieTitle, movieRating, department, job }
+    const genreSet = new Set();
+    const movieSet = new Set();
+    crewCredits.forEach(c => {
+        movieSet.add(c.movieId);
+        (movieGenres[c.movieId] || []).forEach(g => genreSet.add(g));
+    });
+
+    // Best-rated movies for "known for"
+    const sorted = [...crewCredits].sort((a, b) => (b.movieRating || 0) - (a.movieRating || 0));
+    const seen = new Set();
+    const knownFor = [];
+    for (const c of sorted) {
+        if (c.movieTitle && !seen.has(c.movieTitle)) {
+            knownFor.push(c.movieTitle);
+            seen.add(c.movieTitle);
+            if (knownFor.length >= 3) break;
+        }
+    }
+
+    const ratings = crewCredits.map(c => c.movieRating).filter(r => r && r > 0);
+    const avgRating = ratings.length > 0
+        ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
+        : 0;
+
+    const uniqueMovies = movieSet.size;
+    const prominence = Math.round(uniqueMovies * (avgRating / 10) * 10) / 10;
+
+    return {
+        i: personData.id,
+        n: personData.name,
+        p: personData.profile_path || '',
+        d: normalizeDepartment(personData.department || crewCredits[0]?.department || ''),
+        g: [...genreSet].filter(g => g in genreNames),
+        k: knownFor,
+        m: 'movie',
+        mc: uniqueMovies,
+        tc: 0,
+        r: avgRating,
+        s: prominence,
+        b: personData.birthday || '',
+        dd: personData.deathday || '',
+    };
+}
+
 async function fetchTMDBPopular(page) {
     if (!TMDB_TOKEN) return [];
     const url = `https://api.themoviedb.org/3/person/popular?page=${page}`;
@@ -154,9 +222,9 @@ async function fetchTMDBPopular(page) {
     }
 }
 
-async function fetchTMDBPersonDetails(id) {
+async function fetchMovieCredits(movieId) {
     if (!TMDB_TOKEN) return null;
-    const url = `https://api.themoviedb.org/3/person/${id}?append_to_response=movie_credits,tv_credits`;
+    const url = `https://api.themoviedb.org/3/movie/${movieId}/credits`;
     try {
         const resp = await fetch(url, {
             headers: { 'Authorization': `Bearer ${TMDB_TOKEN}` }
@@ -166,6 +234,11 @@ async function fetchTMDBPersonDetails(id) {
     } catch (e) {
         return null;
     }
+}
+
+// Rate-limited fetch helper — TMDB allows ~40 req/sec
+async function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function main() {
@@ -178,15 +251,142 @@ async function main() {
     fkIndex.forEach(p => { deptCounts[p.d] = (deptCounts[p.d] || 0) + 1; });
     console.log('FK department coverage:', deptCounts);
 
-    // Departments we want to fill
-    const targetDepts = ['Sound', 'Camera', 'Art', 'Editing', 'Visual Effects', 'Lighting', 'Costume & Make-Up', 'Crew'];
-    const needsMore = targetDepts.filter(d => (deptCounts[d] || 0) < 50);
-    console.log('Departments needing more data:', needsMore);
+    // ============================================================
+    // PHASE 1: Fetch FULL CREW from top movies via TMDB credits API
+    // This is the primary source for crew departments (Sound, Camera,
+    // Art, Editing, VFX, Costume & Make-Up, etc.)
+    // ============================================================
+
+    // Sort movies by vote_average * vote_count to get most notable films
+    const sortedMovies = [...movies]
+        .filter(m => m.vote_count > 50) // Only movies with meaningful votes
+        .sort((a, b) => {
+            const scoreA = (a.vote_average || 0) * Math.log10((a.vote_count || 1) + 1);
+            const scoreB = (b.vote_average || 0) * Math.log10((b.vote_count || 1) + 1);
+            return scoreB - scoreA;
+        });
+
+    // Take top 2000 movies — each has ~20-80 crew members
+    const moviesToFetch = sortedMovies.slice(0, 2000);
+    console.log(`\nPHASE 1: Fetching full crew from top ${moviesToFetch.length} movies...`);
+
+    // Collect crew members: personId → { id, name, profile_path, department, credits: [...] }
+    const crewMap = new Map();
+    const CREW_DEPTS = new Set(['Sound', 'Camera', 'Art', 'Editing', 'Visual Effects', 'Costume & Make-Up', 'Crew', 'Lighting']);
+
+    if (TMDB_TOKEN) {
+        const BATCH_SIZE = 35; // Stay under TMDB's ~40 req/sec limit
+        let fetchedCount = 0;
+        let crewFound = 0;
+
+        for (let i = 0; i < moviesToFetch.length; i += BATCH_SIZE) {
+            const batch = moviesToFetch.slice(i, i + BATCH_SIZE);
+            const results = await Promise.all(batch.map(m => fetchMovieCredits(m.id)));
+
+            results.forEach((credits, idx) => {
+                if (!credits) return;
+                const movie = batch[idx];
+                const movieRating = movie.vote_average || 0;
+
+                // Process crew (not cast — cast is already well-covered)
+                (credits.crew || []).forEach(crew => {
+                    const dept = normalizeDepartment(crew.department);
+                    if (!CREW_DEPTS.has(dept)) return; // Only collect underrepresented depts
+                    if (seenIds.has(crew.id)) return; // Already in FK index
+
+                    if (!crewMap.has(crew.id)) {
+                        crewMap.set(crew.id, {
+                            id: crew.id,
+                            name: crew.name,
+                            profile_path: crew.profile_path || '',
+                            department: dept,
+                            credits: []
+                        });
+                    }
+                    crewMap.get(crew.id).credits.push({
+                        movieId: movie.id,
+                        movieTitle: movie.title,
+                        movieRating: movieRating,
+                        department: dept,
+                        job: crew.job
+                    });
+                });
+
+                // Also collect cast we don't have yet
+                (credits.cast || []).forEach(cast => {
+                    if (seenIds.has(cast.id)) return;
+                    if (!crewMap.has(cast.id)) {
+                        crewMap.set(cast.id, {
+                            id: cast.id,
+                            name: cast.name,
+                            profile_path: cast.profile_path || '',
+                            department: 'Acting',
+                            credits: []
+                        });
+                    }
+                    crewMap.get(cast.id).credits.push({
+                        movieId: movie.id,
+                        movieTitle: movie.title,
+                        movieRating: movieRating,
+                        department: 'Acting',
+                        job: cast.character || 'Actor'
+                    });
+                });
+            });
+
+            fetchedCount += batch.length;
+            const currentCrewCount = [...crewMap.values()].filter(c => CREW_DEPTS.has(c.department)).length;
+            process.stdout.write(`\r  Movies: ${fetchedCount}/${moviesToFetch.length} | Crew found: ${currentCrewCount} | Total new: ${crewMap.size}`);
+
+            // Small delay between batches to respect rate limits
+            if (i + BATCH_SIZE < moviesToFetch.length) {
+                await delay(1100); // ~1 second between batches
+            }
+        }
+        console.log('');
+
+        // Show crew department breakdown
+        const crewDepts = {};
+        crewMap.forEach(p => { crewDepts[p.department] = (crewDepts[p.department] || 0) + 1; });
+        console.log('Crew from movie credits:', crewDepts);
+    }
+
+    // Convert crew members to index format
+    // Filter: must have profile photo AND at least 2 credits
+    const allCrewEntries = [];
+    crewMap.forEach(person => {
+        if (person.credits.length >= 2 && person.profile_path) {
+            const entry = processCrewMember(person, person.credits);
+            allCrewEntries.push(entry);
+        }
+    });
+    console.log(`Crew with photos & 2+ credits: ${allCrewEntries.length}`);
+
+    // Cap per department to keep file size manageable (~4MB target)
+    // Keep top people by prominence per department
+    const MAX_PER_DEPT = 1500;
+    const crewByDept = {};
+    allCrewEntries.forEach(p => {
+        if (!crewByDept[p.d]) crewByDept[p.d] = [];
+        crewByDept[p.d].push(p);
+    });
+    const crewIndex = [];
+    Object.entries(crewByDept).forEach(([dept, people]) => {
+        people.sort((a, b) => b.s - a.s); // Sort by prominence
+        const kept = people.slice(0, MAX_PER_DEPT);
+        crewIndex.push(...kept);
+        console.log(`  ${dept}: ${people.length} total → keeping top ${kept.length}`);
+    });
+    crewIndex.forEach(p => seenIds.add(p.i));
+    console.log(`Crew index entries (capped): ${crewIndex.length}`);
+
+    // ============================================================
+    // PHASE 2: TMDB Popular people (fills remaining gaps, mostly actors)
+    // ============================================================
 
     let tmdbPeople = [];
-    if (TMDB_TOKEN && needsMore.length > 0) {
-        console.log('Fetching TMDB popular people to fill gaps...');
-        // Fetch 500 pages (10,000 people) in batches of 40 concurrent
+    if (TMDB_TOKEN) {
+        console.log('\nPHASE 2: Fetching TMDB popular people...');
         const TOTAL_PAGES = 500;
         const BATCH_SIZE = 40;
 
@@ -200,7 +400,6 @@ async function main() {
             const results = await Promise.all(fetches);
             const batchPeople = results.flat();
 
-            // Only add people not already in FK index
             batchPeople.forEach(p => {
                 if (!seenIds.has(p.id)) {
                     seenIds.add(p.id);
@@ -212,20 +411,21 @@ async function main() {
         }
         console.log('');
 
-        // Show what we got
         const tmdbDepts = {};
         tmdbPeople.forEach(p => { tmdbDepts[p.known_for_department || 'unknown'] = (tmdbDepts[p.known_for_department || 'unknown'] || 0) + 1; });
-        console.log('TMDB department coverage:', tmdbDepts);
-    } else if (!TMDB_TOKEN) {
-        console.log('No TMDB API key found — skipping TMDB enrichment.');
-        console.log('Set TMDB_API_KEY env var or ensure FK api.js is accessible.');
+        console.log('TMDB popular department coverage:', tmdbDepts);
+    } else {
+        console.log('\nNo TMDB API key found — skipping TMDB enrichment.');
+        console.log('Set TMDB_TOKEN env var or ensure api.js is accessible.');
     }
 
     // Convert TMDB people to index format
     const tmdbIndex = tmdbPeople.map(processTMDB);
 
-    // Merge: FK people first (richer data), then TMDB extras
-    const index = [...fkIndex, ...tmdbIndex];
+    // ============================================================
+    // MERGE: FK people first (richest data), then movie crew, then TMDB popular extras
+    // ============================================================
+    const index = [...fkIndex, ...crewIndex, ...tmdbIndex];
 
     // Sort by prominence score descending
     index.sort((a, b) => b.s - a.s);
@@ -242,7 +442,7 @@ async function main() {
     const sizeBytes = fs.statSync(OUT).size;
     const sizeMB = (sizeBytes / 1024 / 1024).toFixed(2);
     console.log(`\nGenerated: ${OUT}`);
-    console.log(`People: ${index.length} (${fkIndex.length} FK + ${tmdbIndex.length} TMDB)`);
+    console.log(`People: ${index.length} (${fkIndex.length} FK + ${crewIndex.length} crew + ${tmdbIndex.length} TMDB popular)`);
     console.log(`Size: ${sizeMB} MB`);
     console.log(`\nTop 10 by prominence:`);
     index.slice(0, 10).forEach((p, i) => {
