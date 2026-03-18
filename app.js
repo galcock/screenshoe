@@ -205,8 +205,22 @@ const Pages = {
 
         let people = [];
         try {
-            const data = await API.getPopularPeople(1);
-            people = data.results || [];
+            // Fetch multiple pages to ensure all departments have results
+            const pagesToFetch = selectedDept ? 10 : 3;
+            const fetches = [];
+            for (let i = 1; i <= pagesToFetch; i++) {
+                fetches.push(API.getPopularPeople(i));
+            }
+            const pages = await Promise.all(fetches);
+            const allPeople = pages.flatMap(p => p.results || []);
+
+            // Deduplicate by id
+            const seen = new Set();
+            people = allPeople.filter(p => {
+                if (seen.has(p.id)) return false;
+                seen.add(p.id);
+                return true;
+            });
 
             // Filter by department if specified
             if (selectedDept) {
@@ -247,10 +261,20 @@ const Pages = {
             { slug: 'editing', label: 'Editing' },
         ];
 
+        // Store for live search
+        window._discoverPeople = people;
+        window._discoverDept = department;
+
         return `
             <div class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
                 <h1 class="page-title">Discover</h1>
-                <p class="text-secondary" style="margin-bottom:var(--spacing-xl)">Browse film & television professionals</p>
+                <p class="text-secondary" style="margin-bottom:var(--spacing-lg)">Browse film & television professionals</p>
+
+                <div class="discover-search" style="margin-bottom:var(--spacing-lg)">
+                    <input type="text" id="discover-search-input" class="form-input"
+                        placeholder="Search for anyone in film & TV..." autocomplete="off"
+                        style="width:100%;max-width:100%">
+                </div>
 
                 <div class="discover-filters">
                     ${deptFilters.map(f => `
@@ -261,13 +285,18 @@ const Pages = {
                     `).join('')}
                 </div>
 
-                ${people.length > 0 ? `
-                    <div class="person-card-grid">
-                        ${people.map(p => Components.personCard(p)).join('')}
-                    </div>
-                ` : `
-                    ${Components.emptyState('🔍', 'No results', 'Try a different department or check back later.')}
-                `}
+                <div id="discover-results">
+                    ${people.length > 0 ? `
+                        <div class="person-card-grid">
+                            ${people.map(p => Components.personCard(p)).join('')}
+                        </div>
+                    ` : `
+                        ${Components.emptyState('🔍', 'No results', 'Try a different department or check back later.')}
+                    `}
+                </div>
+                <p class="text-tertiary text-center" style="margin-top:var(--spacing-lg);font-size:0.8rem">
+                    Showing ${people.length} professionals${selectedDept ? ` in ${selectedDept}` : ''}. Search above to find anyone in our database of 1M+ film & TV professionals.
+                </p>
             </div>
         `;
     },
@@ -925,21 +954,26 @@ const Pages = {
                 <div class="container container-narrow" style="padding-top:var(--spacing-3xl);padding-bottom:var(--spacing-3xl)">
                     <div class="auth-card" style="max-width:500px;margin:0 auto">
                         <h1 class="auth-title">Claim Your Profile</h1>
-                        <p class="text-secondary text-center" style="margin-bottom:var(--spacing-xl)">
-                            Sign in to begin the verification process.
+                        <p class="text-secondary text-center" style="margin-bottom:var(--spacing-lg)">
+                            Screenshoe is exclusively for verified film & television professionals. Our identity verification is rigorous — only real people with real credits get in.
                         </p>
                         <button class="btn btn-full auth-provider-btn" onclick="Auth.signInWithGoogle()">
                             <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
                             Continue with Google
                         </button>
 
-                        <div class="auth-divider"><span>then</span></div>
+                        <div class="auth-divider"><span>how it works</span></div>
 
                         <div class="text-center text-secondary" style="font-size:0.9rem">
-                            <p>1. Find your profile in our database</p>
-                            <p>2. Verify your identity with a photo</p>
-                            <p>3. Get your verified badge ✓</p>
+                            <p><strong>1.</strong> Find your profile in our TMDB database</p>
+                            <p><strong>2.</strong> Complete a live photo challenge to prove it's you</p>
+                            <p><strong>3.</strong> AI verifies your photo is real, not generated, and matches your profile</p>
+                            <p><strong>4.</strong> Get your verified badge ✓</p>
                         </div>
+                        <p class="text-tertiary text-center" style="font-size:0.75rem;margin-top:var(--spacing-md)">
+                            🤖 AI-generated photos are automatically detected and rejected.
+                            Only authentic, live photos are accepted.
+                        </p>
                     </div>
                 </div>
             `;
@@ -1317,6 +1351,46 @@ Pages._afterRender = {
         if (Auth.isSignedIn() && !Auth.isVerified()) {
             Verification._renderStep();
         }
+    },
+
+    // Discover page: live search
+    discover: () => {
+        const input = document.getElementById('discover-search-input');
+        if (!input) return;
+        let debounce;
+        input.addEventListener('input', () => {
+            clearTimeout(debounce);
+            debounce = setTimeout(async () => {
+                const query = input.value.trim();
+                const resultsEl = document.getElementById('discover-results');
+                if (!resultsEl) return;
+
+                if (query.length < 2) {
+                    // Show default people
+                    const people = window._discoverPeople || [];
+                    resultsEl.innerHTML = people.length > 0
+                        ? `<div class="person-card-grid">${people.map(p => Components.personCard(p)).join('')}</div>`
+                        : Components.emptyState('🔍', 'No results', 'Try a different department.');
+                    return;
+                }
+
+                resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
+                try {
+                    const data = await API.searchPeople(query);
+                    let results = data.results || [];
+                    const dept = window._discoverDept;
+                    const deptMap = { 'acting': 'Acting', 'directing': 'Directing', 'writing': 'Writing', 'production': 'Production', 'sound': 'Sound', 'camera': 'Camera', 'art': 'Art', 'editing': 'Editing' };
+                    if (dept && deptMap[dept]) {
+                        results = results.filter(p => p.known_for_department?.toLowerCase() === deptMap[dept].toLowerCase());
+                    }
+                    resultsEl.innerHTML = results.length > 0
+                        ? `<div class="person-card-grid">${results.map(p => Components.personCard(p)).join('')}</div>`
+                        : Components.emptyState('🔍', 'No results', `No ${deptMap[dept] || ''} professionals found for "${query}". Try a different search.`);
+                } catch (e) {
+                    resultsEl.innerHTML = Components.emptyState('⚠️', 'Search failed', 'Please try again.');
+                }
+            }, 300);
+        });
     },
 
     // Feed page: initialize composer and infinite scroll

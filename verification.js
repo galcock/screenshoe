@@ -2,6 +2,17 @@ const Verification = {
     _selectedPerson: null,  // The TMDB person being claimed
     _selfieFile: null,      // The uploaded selfie file
     _currentStep: 1,        // 1: search, 2: confirm, 3: selfie, 4: submitted
+    _challengePose: null,   // The randomly selected verification pose
+
+    // Verification poses — random challenge to prevent using stock/AI photos
+    _poses: [
+        { id: 'peace', emoji: '✌️', label: 'Peace Sign', instruction: 'Hold up a peace sign next to your face' },
+        { id: 'thumbsup', emoji: '👍', label: 'Thumbs Up', instruction: 'Give a thumbs up next to your face' },
+        { id: 'ok', emoji: '👌', label: 'OK Sign', instruction: 'Make an OK sign next to your face' },
+        { id: 'wave', emoji: '👋', label: 'Wave', instruction: 'Wave at the camera with your hand visible' },
+        { id: 'three', emoji: '🤟', label: 'Three Fingers', instruction: 'Hold up three fingers next to your face' },
+        { id: 'point', emoji: '👆', label: 'Point Up', instruction: 'Point upward with one finger next to your face' },
+    ],
 
     // Get verification status for current user
     async getStatus() {
@@ -36,6 +47,8 @@ const Verification = {
 
     // Confirm selection (step 2 -> step 3)
     confirmSelection() {
+        // Pick a random challenge pose
+        this._challengePose = this._poses[Math.floor(Math.random() * this._poses.length)];
         this._currentStep = 3;
         this._renderStep();
     },
@@ -67,7 +80,9 @@ const Verification = {
         };
         reader.readAsDataURL(file);
 
-        // Enable submit button
+        // Show retake button and enable submit
+        const retakeBtn = document.getElementById('selfie-retake-btn');
+        if (retakeBtn) retakeBtn.style.display = 'inline-flex';
         const submitBtn = document.getElementById('verify-submit-btn');
         if (submitBtn) submitBtn.disabled = false;
     },
@@ -94,7 +109,7 @@ const Verification = {
         const submitBtn = document.getElementById('verify-submit-btn');
         if (submitBtn) {
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Submitting...';
+            submitBtn.innerHTML = '<span class="spinner-small"></span> Analyzing & submitting...';
         }
 
         try {
@@ -117,8 +132,13 @@ const Verification = {
                 tmdbPhotoUrl: tmdbPhotoUrl,
                 selfieStoragePath: storagePath,
                 selfieUrl: selfieUrl,
+                challengePose: this._challengePose?.id || 'unknown',
+                challengeLabel: this._challengePose?.label || 'Unknown',
                 status: 'pending',
-                confidenceScore: null,
+                aiAnalysis: null,        // Will be populated by Cloud Function
+                faceMatchScore: null,    // Will be populated by Cloud Function
+                aiGeneratedScore: null,  // Will be populated by Cloud Function
+                poseDetected: null,      // Will be populated by Cloud Function
                 reviewedBy: null,
                 reviewedAt: null,
                 rejectionReason: null,
@@ -263,41 +283,139 @@ const Verification = {
     },
 
     _renderSelfieStep() {
+        const pose = this._challengePose;
+        const p = this._selectedPerson;
+
         return `
             <div class="verify-step-content">
-                <h2 class="verify-step-title">Verify Your Identity</h2>
-                <p class="text-secondary">Upload a clear photo of yourself. We'll compare it to your profile photo to confirm your identity.</p>
-                <div id="selfie-upload-area" class="verify-selfie-area">
-                    <input type="file" id="selfie-input" accept="image/*" capture="user" style="display:none">
-                    <img id="selfie-preview" style="display:none" class="verify-selfie-preview" alt="Your photo">
-                    <div class="verify-selfie-prompt" id="selfie-prompt">
-                        <div style="font-size:3rem;margin-bottom:1rem">📸</div>
-                        <p>Tap to take or upload a photo</p>
-                        <p class="text-tertiary" style="font-size:0.85rem">Clear, well-lit photo of your face</p>
+                <h2 class="verify-step-title">Prove It's Really You</h2>
+                <p class="text-secondary">To confirm you're really <strong>${p?.name || 'who you say you are'}</strong>, we need a live photo — not a screenshot, not AI-generated, and not someone else's picture.</p>
+
+                <div class="verify-challenge">
+                    <div class="verify-challenge-icon">${pose?.emoji || '📸'}</div>
+                    <div class="verify-challenge-text">
+                        <h3>Your challenge: <span class="verify-challenge-pose">${pose?.label || 'Selfie'}</span></h3>
+                        <p>${pose?.instruction || 'Take a clear photo of yourself'}</p>
                     </div>
                 </div>
-                <button id="verify-submit-btn" class="btn btn-primary btn-full" disabled onclick="Verification.submit()">
-                    Submit for Verification
-                </button>
-                <p class="text-tertiary text-center" style="margin-top:1rem;font-size:0.85rem">
-                    Your photo will be securely stored and only used for identity verification.
+
+                <div class="verify-requirements">
+                    <div class="verify-requirement">
+                        <span class="verify-req-icon">📱</span>
+                        <span>Take a <strong>new photo right now</strong> — no old photos</span>
+                    </div>
+                    <div class="verify-requirement">
+                        <span class="verify-req-icon">${pose?.emoji || '✌️'}</span>
+                        <span><strong>${pose?.label || 'Pose'}</strong> must be clearly visible</span>
+                    </div>
+                    <div class="verify-requirement">
+                        <span class="verify-req-icon">💡</span>
+                        <span>Good lighting, face clearly visible</span>
+                    </div>
+                    <div class="verify-requirement">
+                        <span class="verify-req-icon">🤖</span>
+                        <span>AI-generated images will be <strong>automatically rejected</strong></span>
+                    </div>
+                </div>
+
+                ${p?.profile_path ? `
+                <div class="verify-reference">
+                    <img src="${API.profileUrl(p.profile_path, 'medium')}" alt="${p?.name}" class="verify-reference-photo">
+                    <div class="verify-reference-text">
+                        <p class="text-secondary" style="font-size:0.8rem">We'll match your photo against this profile image</p>
+                    </div>
+                </div>
+                ` : ''}
+
+                <div class="verify-capture-actions">
+                    <button class="btn btn-primary btn-lg" onclick="Verification._openCamera()" id="camera-btn">
+                        📸 Take Photo with Camera
+                    </button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('selfie-input').click()">
+                        📁 Upload a Photo You Just Took
+                    </button>
+                    <input type="file" id="selfie-input" accept="image/*" style="display:none">
+                </div>
+
+                <div id="selfie-upload-area" class="verify-selfie-area" style="display:none">
+                    <img id="selfie-preview" style="display:none" class="verify-selfie-preview" alt="Your photo">
+                </div>
+
+                <div id="selfie-actions" style="display:none">
+                    <button id="selfie-retake-btn" class="btn btn-secondary" onclick="Verification._retake()" style="display:none">
+                        🔄 Retake Photo
+                    </button>
+                    <button id="verify-submit-btn" class="btn btn-primary btn-full" disabled onclick="Verification.submit()">
+                        Submit for Verification
+                    </button>
+                </div>
+
+                <p class="text-tertiary text-center" style="margin-top:1rem;font-size:0.8rem">
+                    Your photo is stored securely and only used for identity verification.
+                    Our system checks for AI-generated images, verifies the pose challenge,
+                    and compares your face against your known profile photo.
                 </p>
             </div>
         `;
     },
 
-    _initSelfieStep() {
-        const area = document.getElementById('selfie-upload-area');
-        const input = document.getElementById('selfie-input');
-        if (!area || !input) return;
+    _openCamera() {
+        // Create a hidden file input with capture="user" to force camera
+        const cameraInput = document.createElement('input');
+        cameraInput.type = 'file';
+        cameraInput.accept = 'image/*';
+        cameraInput.capture = 'user';
+        cameraInput.style.display = 'none';
+        document.body.appendChild(cameraInput);
 
-        area.addEventListener('click', () => input.click());
+        cameraInput.addEventListener('change', (e) => {
+            if (e.target.files?.[0]) {
+                this.handleSelfieUpload(e.target.files[0]);
+                this._showCapturedPhoto();
+            }
+            document.body.removeChild(cameraInput);
+        });
+
+        cameraInput.click();
+    },
+
+    _showCapturedPhoto() {
+        // Show the preview area and action buttons
+        const area = document.getElementById('selfie-upload-area');
+        const actions = document.getElementById('selfie-actions');
+        const captureActions = document.querySelector('.verify-capture-actions');
+        if (area) area.style.display = 'block';
+        if (actions) actions.style.display = 'flex';
+        if (captureActions) captureActions.style.display = 'none';
+
+        // Show retake button
+        const retakeBtn = document.getElementById('selfie-retake-btn');
+        if (retakeBtn) retakeBtn.style.display = 'inline-flex';
+    },
+
+    _retake() {
+        this._selfieFile = null;
+        const preview = document.getElementById('selfie-preview');
+        const area = document.getElementById('selfie-upload-area');
+        const actions = document.getElementById('selfie-actions');
+        const captureActions = document.querySelector('.verify-capture-actions');
+        const submitBtn = document.getElementById('verify-submit-btn');
+
+        if (preview) { preview.style.display = 'none'; preview.src = ''; }
+        if (area) { area.style.display = 'none'; area.classList.remove('has-preview'); }
+        if (actions) actions.style.display = 'none';
+        if (captureActions) captureActions.style.display = 'flex';
+        if (submitBtn) submitBtn.disabled = true;
+    },
+
+    _initSelfieStep() {
+        const input = document.getElementById('selfie-input');
+        if (!input) return;
+
         input.addEventListener('change', (e) => {
             if (e.target.files?.[0]) {
                 this.handleSelfieUpload(e.target.files[0]);
-                // Hide prompt
-                const prompt = document.getElementById('selfie-prompt');
-                if (prompt) prompt.style.display = 'none';
+                this._showCapturedPhoto();
             }
         });
     },
@@ -308,10 +426,21 @@ const Verification = {
                 <div style="font-size:4rem;margin-bottom:1rem">✅</div>
                 <h2 class="verify-step-title">Verification Submitted</h2>
                 <p class="text-secondary" style="max-width:400px;margin:1rem auto">
-                    Your verification request is being reviewed. This typically takes less than 24 hours.
-                    We'll notify you once your identity has been confirmed.
+                    Your photo is being analyzed for authenticity and compared to your profile.
+                    This typically takes less than 24 hours. We'll notify you once your identity has been confirmed.
                 </p>
-                <a href="/" class="btn btn-secondary" style="margin-top:2rem">Back to Home</a>
+                <div class="verify-checks-summary">
+                    <div class="verify-check-item">
+                        <span>🔍</span> Face comparison against profile photo
+                    </div>
+                    <div class="verify-check-item">
+                        <span>${this._challengePose?.emoji || '✌️'}</span> ${this._challengePose?.label || 'Pose'} challenge verification
+                    </div>
+                    <div class="verify-check-item">
+                        <span>🤖</span> AI-generated image detection
+                    </div>
+                </div>
+                <a href="/" class="btn btn-secondary" style="margin-top:1.5rem">Back to Home</a>
             </div>
         `;
     },
@@ -321,6 +450,7 @@ const Verification = {
         this._selectedPerson = null;
         this._selfieFile = null;
         this._currentStep = 1;
+        this._challengePose = null;
     },
 
     // Admin: approve a verification
