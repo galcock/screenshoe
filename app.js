@@ -288,7 +288,6 @@ const Pages = {
                                 <option value="all">All</option>
                                 <option value="female">Female</option>
                                 <option value="male">Male</option>
-                                <option value="other">Non-Binary</option>
                             </select>
                         </div>
                         <div class="discover-filter-group">
@@ -309,10 +308,10 @@ const Pages = {
                             <label>Tier</label>
                             <select id="discover-tier-select" class="form-select" onchange="Pages._discoverSetTier(this.value)">
                                 <option value="all">All Tiers</option>
-                                <option value="a-list">A-List (25+)</option>
-                                <option value="established">Established (15–25)</option>
-                                <option value="working">Working Pro (5–15)</option>
-                                <option value="emerging">Emerging (&lt;5)</option>
+                                <option value="a-list">A-List</option>
+                                <option value="established">Established</option>
+                                <option value="working">Working Pro</option>
+                                <option value="emerging">Emerging</option>
                             </select>
                         </div>
                     </div>
@@ -744,7 +743,6 @@ const Pages = {
         // Gender filter
         if (gender === 'female') filtered = filtered.filter(p => p.gender === 1);
         else if (gender === 'male') filtered = filtered.filter(p => p.gender === 2);
-        else if (gender === 'other') filtered = filtered.filter(p => p.gender === 3 || p.gender === 0);
 
         // Genre filter — match against known_for genre_ids
         if (genre !== 'all') {
@@ -761,11 +759,14 @@ const Pages = {
             );
         }
 
-        // Popularity tier filter
-        if (tier === 'a-list') filtered = filtered.filter(p => (p.popularity || 0) >= 25);
-        else if (tier === 'established') filtered = filtered.filter(p => (p.popularity || 0) >= 15 && (p.popularity || 0) < 25);
-        else if (tier === 'working') filtered = filtered.filter(p => (p.popularity || 0) >= 5 && (p.popularity || 0) < 15);
-        else if (tier === 'emerging') filtered = filtered.filter(p => (p.popularity || 0) < 5);
+        // Popularity tier filter — percentile-based from loaded pool
+        if (tier !== 'all') {
+            const thresholds = this._discoverGetTierThresholds();
+            if (tier === 'a-list') filtered = filtered.filter(p => (p.popularity || 0) >= thresholds.aList);
+            else if (tier === 'established') filtered = filtered.filter(p => (p.popularity || 0) >= thresholds.established && (p.popularity || 0) < thresholds.aList);
+            else if (tier === 'working') filtered = filtered.filter(p => (p.popularity || 0) >= thresholds.working && (p.popularity || 0) < thresholds.established);
+            else if (tier === 'emerging') filtered = filtered.filter(p => (p.popularity || 0) < thresholds.working);
+        }
 
         return filtered;
     },
@@ -777,6 +778,27 @@ const Pages = {
         else if (sort === 'name-za') sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
         else sorted.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
         return sorted;
+    },
+
+    // Dynamic tier thresholds: top 10% = A-List, 10-35% = Established, 35-75% = Working, bottom 25% = Emerging
+    _discoverGetTierThresholds() {
+        const raw = window._discoverRawPeople || [];
+        if (raw.length === 0) return { aList: 20, established: 10, working: 5 };
+        const pops = raw.map(p => p.popularity || 0).sort((a, b) => b - a);
+        const len = pops.length;
+        return {
+            aList: pops[Math.floor(len * 0.10)] || 20,
+            established: pops[Math.floor(len * 0.35)] || 10,
+            working: pops[Math.floor(len * 0.75)] || 5
+        };
+    },
+
+    _getTierInfo(pop) {
+        const t = this._discoverGetTierThresholds();
+        if (pop >= t.aList) return { label: 'A-List', cls: 'tier-a' };
+        if (pop >= t.established) return { label: 'Established', cls: 'tier-b' };
+        if (pop >= t.working) return { label: 'Working', cls: 'tier-c' };
+        return { label: 'Emerging', cls: 'tier-d' };
     },
 
     _renderDiscoverGrid(people) {
@@ -796,8 +818,9 @@ const Pages = {
                 const knownFor = (p.known_for || []).slice(0, 3).map(k => k.title || k.name).filter(Boolean).join(', ');
                 const href = API.getPersonUrl(p);
                 const pop = Math.round(p.popularity || 0);
-                const tierLabel = pop >= 25 ? 'A-List' : pop >= 15 ? 'Established' : pop >= 5 ? 'Working' : 'Emerging';
-                const tierClass = pop >= 25 ? 'tier-a' : pop >= 15 ? 'tier-b' : pop >= 5 ? 'tier-c' : 'tier-d';
+                const tierInfo = this._getTierInfo(pop);
+                const tierLabel = tierInfo.label;
+                const tierClass = tierInfo.cls;
                 return `<a href="${href}" class="discover-list-item" data-link>
                     <div class="discover-list-photo">
                         ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy">` : `<div class="discover-list-placeholder">${(p.name || '?').charAt(0)}</div>`}
@@ -826,7 +849,9 @@ const Pages = {
         resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
 
         try {
-            const fetches = [API.getPopularPeople(1), API.getPopularPeople(2), API.getPopularPeople(3)];
+            // Load 15 pages concurrently (300 people) for robust filtering
+            const fetches = [];
+            for (let i = 1; i <= 15; i++) fetches.push(API.getPopularPeople(i));
             const pages = await Promise.all(fetches);
             let allPeople = pages.flatMap(p => p.results || []);
 
@@ -835,14 +860,14 @@ const Pages = {
 
             // Store raw, then filter/sort for display
             window._discoverRawPeople = allPeople;
-            window._discoverPopularPage = 3;
+            window._discoverPopularPage = 15;
 
             let people = this._filterPeople(allPeople);
             people = this._sortPeople(people);
             window._discoverAllPeople = people;
 
             resultsEl.innerHTML = this._renderDiscoverGrid(people);
-            if (statusEl) statusEl.textContent = `Showing ${people.length} popular ${this._deptMap[window._discoverDept] || ''} professionals. Search to find anyone from 3M+ people.`;
+            if (statusEl) statusEl.textContent = `Showing ${people.length} popular ${this._deptMap[window._discoverDept] || ''} professionals from ${allPeople.length} loaded. Search to find anyone from 3M+ people.`;
             if (loadMoreBtn) loadMoreBtn.style.display = 'block';
         } catch (e) {
             resultsEl.innerHTML = Components.emptyState('⚠️', 'Failed to load', 'Please refresh and try again.');
@@ -915,30 +940,29 @@ const Pages = {
         if (!resultsEl || window._discoverLoading) return;
         window._discoverLoading = true;
 
-        const nextPage = (window._discoverPopularPage || 3) + 1;
+        const nextPage = (window._discoverPopularPage || 15) + 1;
         try {
+            // Fetch 10 pages at a time for faster browsing
             const fetches = [];
-            for (let i = nextPage; i < nextPage + 3; i++) fetches.push(API.getPopularPeople(i));
+            for (let i = nextPage; i < nextPage + 10; i++) fetches.push(API.getPopularPeople(i));
             const pages = await Promise.all(fetches);
             let newPeople = pages.flatMap(p => p.results || []);
 
             const existing = new Set((window._discoverRawPeople || []).map(p => p.id));
             newPeople = newPeople.filter(p => !existing.has(p.id));
             window._discoverRawPeople = [...(window._discoverRawPeople || []), ...newPeople];
-            window._discoverPopularPage = nextPage + 2;
+            window._discoverPopularPage = nextPage + 9;
 
-            let filtered = this._filterPeople(newPeople);
-            filtered = this._sortPeople(filtered);
-            window._discoverAllPeople = [...(window._discoverAllPeople || []), ...filtered];
+            // Re-filter/sort entire pool for consistent display
+            let allFiltered = this._filterPeople(window._discoverRawPeople);
+            allFiltered = this._sortPeople(allFiltered);
+            window._discoverAllPeople = allFiltered;
 
-            const grid = resultsEl.querySelector('.person-card-grid, .discover-list');
-            if (grid && filtered.length > 0) {
-                grid.insertAdjacentHTML('beforeend', this._renderDiscoverGrid(filtered).replace(/<div class="(person-card-grid|discover-list)">|<\/div>$/g, ''));
-            }
+            resultsEl.innerHTML = this._renderDiscoverGrid(allFiltered);
 
             const statusEl = document.getElementById('discover-status');
-            if (statusEl) statusEl.textContent = `Showing ${(window._discoverAllPeople || []).length} professionals. Search to find anyone.`;
-            if (loadMoreBtn) loadMoreBtn.style.display = filtered.length > 0 ? 'block' : 'none';
+            if (statusEl) statusEl.textContent = `Showing ${allFiltered.length} professionals from ${window._discoverRawPeople.length} loaded. Search to find anyone.`;
+            if (loadMoreBtn) loadMoreBtn.style.display = newPeople.length > 0 ? 'block' : 'none';
         } catch (e) {
             console.warn('Failed to load more:', e);
         }
@@ -998,9 +1022,9 @@ const Pages = {
 
         const filters = [];
         const labelMap = {
-            gender: { female: 'Female', male: 'Male', other: 'Non-Binary' },
+            gender: { female: 'Female', male: 'Male' },
             media: { movie: 'Film Only', tv: 'TV Only' },
-            tier: { 'a-list': 'A-List (25+)', established: 'Established (15–25)', working: 'Working Pro (5–15)', emerging: 'Emerging (<5)' }
+            tier: { 'a-list': 'A-List', established: 'Established', working: 'Working Pro', emerging: 'Emerging' }
         };
 
         // Genre label lookup
@@ -1026,7 +1050,7 @@ const Pages = {
         `;
     },
 
-    _discoverReapplyFilters() {
+    async _discoverReapplyFilters() {
         const resultsEl = document.getElementById('discover-results');
         if (!resultsEl) return;
 
@@ -1046,8 +1070,45 @@ const Pages = {
         window._discoverAllPeople = people;
         resultsEl.innerHTML = this._renderDiscoverGrid(people);
 
+        const raw = window._discoverRawPeople || [];
         const statusEl = document.getElementById('discover-status');
-        if (statusEl) statusEl.textContent = `Showing ${people.length} professionals. Search to find anyone.`;
+        if (statusEl) statusEl.textContent = `Showing ${people.length} professionals from ${raw.length} loaded. Search to find anyone.`;
+
+        // Auto-fetch more if filters leave too few results and we have any active filter
+        const hasFilter = (window._discoverDept || window._discoverGender !== 'all' || window._discoverGenre !== 'all' || window._discoverMedia !== 'all' || window._discoverTier !== 'all');
+        if (hasFilter && people.length < 40 && !window._discoverAutoLoading) {
+            window._discoverAutoLoading = true;
+            if (statusEl) statusEl.textContent = `Showing ${people.length} results — loading more...`;
+            await this._discoverExpandPool();
+            window._discoverAutoLoading = false;
+
+            // Re-filter with expanded pool
+            people = this._filterPeople(window._discoverRawPeople || []);
+            people = this._sortPeople(people);
+            window._discoverAllPeople = people;
+            resultsEl.innerHTML = this._renderDiscoverGrid(people);
+            const newRaw = window._discoverRawPeople || [];
+            if (statusEl) statusEl.textContent = `Showing ${people.length} professionals from ${newRaw.length} loaded. Search to find anyone.`;
+        }
+    },
+
+    // Fetch more popular pages to expand the pool for filtering
+    async _discoverExpandPool() {
+        const currentPage = window._discoverPopularPage || 15;
+        const maxPage = Math.min(currentPage + 20, 500); // Fetch up to 20 more pages (400 more people)
+        const fetches = [];
+        for (let i = currentPage + 1; i <= maxPage; i++) fetches.push(API.getPopularPeople(i));
+
+        try {
+            const pages = await Promise.all(fetches);
+            let newPeople = pages.flatMap(p => p.results || []);
+            const existing = new Set((window._discoverRawPeople || []).map(p => p.id));
+            newPeople = newPeople.filter(p => !existing.has(p.id));
+            window._discoverRawPeople = [...(window._discoverRawPeople || []), ...newPeople];
+            window._discoverPopularPage = maxPage;
+        } catch (e) {
+            console.warn('Failed to expand pool:', e);
+        }
     },
 
     // ==========================================
