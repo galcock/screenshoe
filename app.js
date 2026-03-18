@@ -216,10 +216,6 @@ const Pages = {
             { slug: 'directing', label: 'Directing' },
             { slug: 'writing', label: 'Writing' },
             { slug: 'production', label: 'Production' },
-            { slug: 'sound', label: 'Music & Sound' },
-            { slug: 'camera', label: 'Cinematography' },
-            { slug: 'art', label: 'Art & Design' },
-            { slug: 'editing', label: 'Editing' },
         ];
 
         // Sort/view/filter options
@@ -229,6 +225,7 @@ const Pages = {
         window._discoverGenre = 'all';
         window._discoverMedia = 'all';
         window._discoverTier = 'all';
+        window._discoverLiving = 'living';
 
         // Genre map (TMDB genre IDs → labels)
         const genreOptions = [
@@ -314,6 +311,13 @@ const Pages = {
                                 <option value="established">Established</option>
                                 <option value="working">Working Pro</option>
                                 <option value="emerging">Emerging</option>
+                            </select>
+                        </div>
+                        <div class="discover-filter-group">
+                            <label>Status</label>
+                            <select id="discover-living-select" class="form-select" onchange="Pages._discoverSetLiving(this.value)">
+                                <option value="living">Living</option>
+                                <option value="all">All (incl. deceased)</option>
                             </select>
                         </div>
                     </div>
@@ -762,6 +766,15 @@ const Pages = {
             });
         }
 
+        // Living filter — exclude deceased people by default
+        const living = window._discoverLiving || 'living';
+        if (living === 'living') {
+            filtered = filtered.filter(p => {
+                if (p._isIndex) return !p.deathday;
+                return true; // TMDB API results don't have deathday
+            });
+        }
+
         // Tier filter — based on prominence score for index, popularity for TMDB
         if (tier !== 'all') {
             filtered = filtered.filter(p => {
@@ -897,10 +910,14 @@ const Pages = {
                 window._discoverIndex = await resp.json();
                 window._discoverGenreNames = window._discoverIndex.genreNames || {};
                 // Normalize all people once
-                window._discoverRawPeople = window._discoverIndex.people.map(p => this._normalizeIndexPerson(p));
+                window._discoverIndexPeople = window._discoverIndex.people.map(p => this._normalizeIndexPerson(p));
             }
 
-            const raw = window._discoverRawPeople;
+            // Start with index people
+            let raw = [...window._discoverIndexPeople];
+
+            window._discoverRawPeople = raw;
+
             let people = this._filterPeople(raw);
             people = this._sortPeople(people);
             window._discoverFilteredPeople = people;
@@ -1011,6 +1028,11 @@ const Pages = {
         this._discoverReapplyFilters();
     },
 
+    _discoverSetLiving(value) {
+        window._discoverLiving = value;
+        this._discoverReapplyFilters();
+    },
+
     _discoverSetView(view) {
         window._discoverView = view;
         document.querySelectorAll('.discover-view-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === (view === 'grid' ? '⊞' : '☰')));
@@ -1025,6 +1047,9 @@ const Pages = {
     },
 
     _discoverClearAllFilters() {
+        window._discoverLiving = 'living'; // Reset to living, not 'all'
+        const livingEl = document.getElementById('discover-living-select');
+        if (livingEl) livingEl.value = 'living';
         ['gender', 'genre', 'media', 'tier'].forEach(k => {
             window['_discover' + k.charAt(0).toUpperCase() + k.slice(1)] = 'all';
             const el = document.getElementById(`discover-${k}-select`);
@@ -1055,6 +1080,8 @@ const Pages = {
             filters.push({ key: 'media', label: labelMap.media[window._discoverMedia] || window._discoverMedia });
         if (window._discoverTier && window._discoverTier !== 'all')
             filters.push({ key: 'tier', label: labelMap.tier[window._discoverTier] || window._discoverTier });
+        if (window._discoverLiving && window._discoverLiving === 'all')
+            filters.push({ key: 'living', label: 'Incl. Deceased' });
 
         if (filters.length === 0) {
             container.innerHTML = '';
