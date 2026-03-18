@@ -277,7 +277,9 @@ const Pages = {
                         <div class="discover-filter-group">
                             <label>Sort</label>
                             <select id="discover-sort-select" class="form-select" onchange="Pages._discoverSetSort(this.value)">
-                                <option value="popularity">Popularity</option>
+                                <option value="popularity">Prominence</option>
+                                <option value="credits">Most Credits</option>
+                                <option value="rating">Highest Rated</option>
                                 <option value="name-az">Name A→Z</option>
                                 <option value="name-za">Name Z→A</option>
                             </select>
@@ -724,7 +726,6 @@ const Pages = {
         'art': 'Art', 'editing': 'Editing'
     },
 
-    // TMDB gender codes: 0=not set, 1=female, 2=male, 3=non-binary
     _filterPeople(people) {
         let filtered = [...people];
         const dept = window._discoverDept;
@@ -740,32 +741,39 @@ const Pages = {
             );
         }
 
-        // Gender filter
-        if (gender === 'female') filtered = filtered.filter(p => p.gender === 1);
-        else if (gender === 'male') filtered = filtered.filter(p => p.gender === 2);
+        // Gender filter (for TMDB API results only — index doesn't have gender)
+        if (gender === 'female') filtered = filtered.filter(p => p._isIndex ? true : p.gender === 1);
+        else if (gender === 'male') filtered = filtered.filter(p => p._isIndex ? true : p.gender === 2);
 
-        // Genre filter — match against known_for genre_ids
+        // Genre filter
         if (genre !== 'all') {
             const gid = parseInt(genre, 10);
-            filtered = filtered.filter(p =>
-                (p.known_for || []).some(k => (k.genre_ids || []).includes(gid))
-            );
+            filtered = filtered.filter(p => {
+                if (p._isIndex) return (p.genre_ids || []).includes(gid);
+                return (p.known_for || []).some(k => (k.genre_ids || []).includes(gid));
+            });
         }
 
-        // Media type filter — match against known_for media_type
+        // Media type filter
         if (media !== 'all') {
-            filtered = filtered.filter(p =>
-                (p.known_for || []).some(k => k.media_type === media)
-            );
+            filtered = filtered.filter(p => {
+                if (p._isIndex) return p.media === media || p.media === 'both';
+                return (p.known_for || []).some(k => k.media_type === media);
+            });
         }
 
-        // Popularity tier filter — percentile-based from loaded pool
+        // Tier filter — based on prominence score for index, popularity for TMDB
         if (tier !== 'all') {
-            const thresholds = this._discoverGetTierThresholds();
-            if (tier === 'a-list') filtered = filtered.filter(p => (p.popularity || 0) >= thresholds.aList);
-            else if (tier === 'established') filtered = filtered.filter(p => (p.popularity || 0) >= thresholds.established && (p.popularity || 0) < thresholds.aList);
-            else if (tier === 'working') filtered = filtered.filter(p => (p.popularity || 0) >= thresholds.working && (p.popularity || 0) < thresholds.established);
-            else if (tier === 'emerging') filtered = filtered.filter(p => (p.popularity || 0) < thresholds.working);
+            filtered = filtered.filter(p => {
+                const score = p._isIndex ? (p.prominence || 0) : (p.popularity || 0);
+                const tierInfo = this._getTierInfo(score);
+                const tierKey = tierInfo.label.toLowerCase().replace('-', '-');
+                if (tier === 'a-list') return tierInfo.cls === 'tier-a';
+                if (tier === 'established') return tierInfo.cls === 'tier-b';
+                if (tier === 'working') return tierInfo.cls === 'tier-c';
+                if (tier === 'emerging') return tierInfo.cls === 'tier-d';
+                return true;
+            });
         }
 
         return filtered;
@@ -776,28 +784,38 @@ const Pages = {
         const sorted = [...people];
         if (sort === 'name-az') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         else if (sort === 'name-za') sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
-        else sorted.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        else if (sort === 'rating') sorted.sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0));
+        else if (sort === 'credits') sorted.sort((a, b) => ((b.movie_count||0)+(b.tv_count||0)) - ((a.movie_count||0)+(a.tv_count||0)));
+        else sorted.sort((a, b) => (b.prominence || b.popularity || 0) - (a.prominence || a.popularity || 0));
         return sorted;
     },
 
-    // Dynamic tier thresholds: top 10% = A-List, 10-35% = Established, 35-75% = Working, bottom 25% = Emerging
-    _discoverGetTierThresholds() {
-        const raw = window._discoverRawPeople || [];
-        if (raw.length === 0) return { aList: 20, established: 10, working: 5 };
-        const pops = raw.map(p => p.popularity || 0).sort((a, b) => b - a);
-        const len = pops.length;
+    // Normalize index person (compact keys) to display format
+    _normalizeIndexPerson(p) {
         return {
-            aList: pops[Math.floor(len * 0.10)] || 20,
-            established: pops[Math.floor(len * 0.35)] || 10,
-            working: pops[Math.floor(len * 0.75)] || 5
+            id: p.i,
+            name: p.n,
+            profile_path: p.p || null,
+            known_for_department: p.d || '',
+            genre_ids: p.g || [],
+            known_for_titles: p.k || [],
+            media: p.m || 'both',
+            movie_count: p.mc || 0,
+            tv_count: p.tc || 0,
+            avg_rating: p.r || 0,
+            prominence: p.s || 0,
+            birthday: p.b || '',
+            deathday: p.dd || '',
+            _isIndex: true // flag for rendering
         };
     },
 
-    _getTierInfo(pop) {
-        const t = this._discoverGetTierThresholds();
-        if (pop >= t.aList) return { label: 'A-List', cls: 'tier-a' };
-        if (pop >= t.established) return { label: 'Established', cls: 'tier-b' };
-        if (pop >= t.working) return { label: 'Working', cls: 'tier-c' };
+    // Tier thresholds for 5,000 people: top 10%, 10-35%, 35-75%, bottom 25%
+    _getTierInfo(prominence) {
+        // Based on 5K people: top ~500 = A-List, next ~1250 = Established, next ~2000 = Working, bottom ~1250 = Emerging
+        if (prominence >= 100) return { label: 'A-List', cls: 'tier-a' };
+        if (prominence >= 30) return { label: 'Established', cls: 'tier-b' };
+        if (prominence >= 10) return { label: 'Working', cls: 'tier-c' };
         return { label: 'Emerging', cls: 'tier-d' };
     },
 
@@ -810,17 +828,18 @@ const Pages = {
                     <div></div>
                     <div>Name</div>
                     <div>Known For</div>
-                    <div>Pop.</div>
+                    <div>Credits</div>
                 </div>
                 ${people.map(p => {
                 const photo = p.profile_path ? API.profileUrl(p.profile_path, 'medium') : '';
                 const dept = p.known_for_department || '';
-                const knownFor = (p.known_for || []).slice(0, 3).map(k => k.title || k.name).filter(Boolean).join(', ');
-                const href = API.getPersonUrl(p);
-                const pop = Math.round(p.popularity || 0);
-                const tierInfo = this._getTierInfo(pop);
-                const tierLabel = tierInfo.label;
-                const tierClass = tierInfo.cls;
+                const knownFor = p._isIndex
+                    ? (p.known_for_titles || []).join(', ')
+                    : (p.known_for || []).slice(0, 3).map(k => k.title || k.name).filter(Boolean).join(', ');
+                const href = `/person/${p.id}`;
+                const credits = p._isIndex ? (p.movie_count + p.tv_count) : Math.round(p.popularity || 0);
+                const score = p._isIndex ? p.prominence : (p.popularity || 0);
+                const tierInfo = this._getTierInfo(score);
                 return `<a href="${href}" class="discover-list-item" data-link>
                     <div class="discover-list-photo">
                         ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy">` : `<div class="discover-list-placeholder">${(p.name || '?').charAt(0)}</div>`}
@@ -831,14 +850,18 @@ const Pages = {
                     </div>
                     <div class="discover-list-known">${knownFor}</div>
                     <div class="discover-list-pop">
-                        <span class="discover-pop-score">${pop}</span>
-                        <span class="discover-pop-tier ${tierClass}">${tierLabel}</span>
+                        <span class="discover-pop-score">${credits}</span>
+                        <span class="discover-pop-tier ${tierInfo.cls}">${tierInfo.label}</span>
                     </div>
                 </a>`;
             }).join('')}</div>`;
         }
+        // Grid view — Components.personCard handles both index and TMDB people
         return `<div class="person-card-grid">${people.map(p => Components.personCard(p)).join('')}</div>`;
     },
+
+    // Page size for client-side pagination
+    _DISCOVER_PAGE_SIZE: 60,
 
     async _discoverLoadInitial() {
         const resultsEl = document.getElementById('discover-results');
@@ -849,124 +872,99 @@ const Pages = {
         resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
 
         try {
-            // Load 15 pages concurrently (300 people) for robust filtering
-            const fetches = [];
-            for (let i = 1; i <= 15; i++) fetches.push(API.getPopularPeople(i));
-            const pages = await Promise.all(fetches);
-            let allPeople = pages.flatMap(p => p.results || []);
+            // Load local index (5,000 people, ~1.2MB)
+            if (!window._discoverIndex) {
+                const resp = await fetch('/data/discover-index.json');
+                window._discoverIndex = await resp.json();
+                window._discoverGenreNames = window._discoverIndex.genreNames || {};
+                // Normalize all people once
+                window._discoverRawPeople = window._discoverIndex.people.map(p => this._normalizeIndexPerson(p));
+            }
 
-            const seen = new Set();
-            allPeople = allPeople.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
-
-            // Store raw, then filter/sort for display
-            window._discoverRawPeople = allPeople;
-            window._discoverPopularPage = 15;
-
-            let people = this._filterPeople(allPeople);
+            const raw = window._discoverRawPeople;
+            let people = this._filterPeople(raw);
             people = this._sortPeople(people);
-            window._discoverAllPeople = people;
+            window._discoverFilteredPeople = people;
+            window._discoverDisplayCount = this._DISCOVER_PAGE_SIZE;
 
-            resultsEl.innerHTML = this._renderDiscoverGrid(people);
-            if (statusEl) statusEl.textContent = `Showing ${people.length} popular ${this._deptMap[window._discoverDept] || ''} professionals from ${allPeople.length} loaded. Search to find anyone from 3M+ people.`;
-            if (loadMoreBtn) loadMoreBtn.style.display = 'block';
+            const showing = people.slice(0, this._DISCOVER_PAGE_SIZE);
+            window._discoverAllPeople = showing;
+
+            resultsEl.innerHTML = this._renderDiscoverGrid(showing);
+            if (statusEl) statusEl.textContent = `Showing ${showing.length} of ${people.length} professionals from ${raw.length} in database. Search to find anyone.`;
+            if (loadMoreBtn) loadMoreBtn.style.display = people.length > this._DISCOVER_PAGE_SIZE ? 'block' : 'none';
         } catch (e) {
+            console.error('Failed to load discover index:', e);
             resultsEl.innerHTML = Components.emptyState('⚠️', 'Failed to load', 'Please refresh and try again.');
         }
     },
 
-    async _discoverSearch(query, page = 1, append = false) {
+    async _discoverSearch(query) {
         const resultsEl = document.getElementById('discover-results');
         const statusEl = document.getElementById('discover-status');
         const loadMoreBtn = document.getElementById('discover-load-more');
         if (!resultsEl) return;
-        if (window._discoverLoading) return;
-        window._discoverLoading = true;
 
-        if (!append) resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
+        resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
 
+        // Search local index first
+        const raw = window._discoverRawPeople || [];
+        const q = query.toLowerCase();
+        let localResults = raw.filter(p => p.name.toLowerCase().includes(q));
+        localResults = this._filterPeople(localResults);
+        localResults = this._sortPeople(localResults);
+
+        // Also search TMDB API for people not in our index
+        let tmdbResults = [];
         try {
-            const fetches = [];
-            for (let i = page; i < page + 3; i++) fetches.push(API.searchPeople(query, i));
+            const fetches = [API.searchPeople(query, 1), API.searchPeople(query, 2)];
             const pages = await Promise.all(fetches);
-            let results = pages.flatMap(p => p.results || []);
-            const totalResults = pages[0]?.total_results || 0;
-            const totalPages = pages[0]?.total_pages || 0;
+            let apiResults = pages.flatMap(p => p.results || []);
+            const localIds = new Set(raw.map(p => p.id));
+            tmdbResults = apiResults.filter(p => !localIds.has(p.id));
+        } catch (e) {}
 
-            const seen = new Set();
-            results = results.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+        // Combine: local matches first, then TMDB extras
+        const combined = [...localResults, ...tmdbResults];
+        window._discoverFilteredPeople = combined;
+        window._discoverDisplayCount = this._DISCOVER_PAGE_SIZE;
+        const showing = combined.slice(0, this._DISCOVER_PAGE_SIZE);
+        window._discoverAllPeople = showing;
 
-            // Apply filters & sort
-            results = this._filterPeople(results);
-            results = this._sortPeople(results);
-
-            window._discoverPage = page + 3;
-            window._discoverHasMore = (page + 3) <= totalPages;
-
-            if (append) {
-                const grid = resultsEl.querySelector('.person-card-grid, .discover-list');
-                if (grid) {
-                    // Re-render all for consistent sort in list view
-                    window._discoverAllPeople = [...(window._discoverAllPeople || []), ...results];
-                    grid.insertAdjacentHTML('beforeend', this._renderDiscoverGrid(results).replace(/<div class="(person-card-grid|discover-list)">|<\/div>$/g, ''));
-                }
-            } else {
-                window._discoverAllPeople = results;
-                resultsEl.innerHTML = this._renderDiscoverGrid(results);
-            }
-
-            const deptLabel = this._deptMap[window._discoverDept] || '';
-            if (statusEl) statusEl.textContent = totalResults > 0
-                ? `Found ${totalResults.toLocaleString()} results for "${query}"${deptLabel ? ` in ${deptLabel}` : ''}`
-                : '';
-            if (loadMoreBtn) loadMoreBtn.style.display = (results.length > 0 && window._discoverHasMore) ? 'block' : 'none';
-        } catch (e) {
-            if (!append) resultsEl.innerHTML = Components.emptyState('⚠️', 'Search failed', 'Please try again.');
+        resultsEl.innerHTML = this._renderDiscoverGrid(showing);
+        if (statusEl) {
+            const extra = tmdbResults.length > 0 ? ` + ${tmdbResults.length} from TMDB` : '';
+            statusEl.textContent = `Found ${localResults.length} matches in database${extra} for "${query}"`;
         }
-        window._discoverLoading = false;
+        if (loadMoreBtn) loadMoreBtn.style.display = combined.length > this._DISCOVER_PAGE_SIZE ? 'block' : 'none';
     },
 
     _discoverLoadMore() {
         const query = window._discoverQuery;
         if (query && query.length >= 2) {
-            this._discoverSearch(query, window._discoverPage, true);
+            this._discoverShowMore();
         } else {
-            this._discoverLoadMorePopular();
+            this._discoverShowMore();
         }
     },
 
-    async _discoverLoadMorePopular() {
+    _discoverShowMore() {
         const resultsEl = document.getElementById('discover-results');
         const loadMoreBtn = document.getElementById('discover-load-more');
-        if (!resultsEl || window._discoverLoading) return;
-        window._discoverLoading = true;
+        const statusEl = document.getElementById('discover-status');
+        if (!resultsEl) return;
 
-        const nextPage = (window._discoverPopularPage || 15) + 1;
-        try {
-            // Fetch 10 pages at a time for faster browsing
-            const fetches = [];
-            for (let i = nextPage; i < nextPage + 10; i++) fetches.push(API.getPopularPeople(i));
-            const pages = await Promise.all(fetches);
-            let newPeople = pages.flatMap(p => p.results || []);
+        const filtered = window._discoverFilteredPeople || [];
+        const current = window._discoverDisplayCount || this._DISCOVER_PAGE_SIZE;
+        const next = current + this._DISCOVER_PAGE_SIZE;
+        window._discoverDisplayCount = next;
 
-            const existing = new Set((window._discoverRawPeople || []).map(p => p.id));
-            newPeople = newPeople.filter(p => !existing.has(p.id));
-            window._discoverRawPeople = [...(window._discoverRawPeople || []), ...newPeople];
-            window._discoverPopularPage = nextPage + 9;
+        const showing = filtered.slice(0, next);
+        window._discoverAllPeople = showing;
+        resultsEl.innerHTML = this._renderDiscoverGrid(showing);
 
-            // Re-filter/sort entire pool for consistent display
-            let allFiltered = this._filterPeople(window._discoverRawPeople);
-            allFiltered = this._sortPeople(allFiltered);
-            window._discoverAllPeople = allFiltered;
-
-            resultsEl.innerHTML = this._renderDiscoverGrid(allFiltered);
-
-            const statusEl = document.getElementById('discover-status');
-            if (statusEl) statusEl.textContent = `Showing ${allFiltered.length} professionals from ${window._discoverRawPeople.length} loaded. Search to find anyone.`;
-            if (loadMoreBtn) loadMoreBtn.style.display = newPeople.length > 0 ? 'block' : 'none';
-        } catch (e) {
-            console.warn('Failed to load more:', e);
-        }
-        window._discoverLoading = false;
+        if (statusEl) statusEl.textContent = `Showing ${showing.length} of ${filtered.length} professionals.`;
+        if (loadMoreBtn) loadMoreBtn.style.display = next < filtered.length ? 'block' : 'none';
     },
 
     _discoverSetSort(value) {
@@ -1050,7 +1048,7 @@ const Pages = {
         `;
     },
 
-    async _discoverReapplyFilters() {
+    _discoverReapplyFilters() {
         const resultsEl = document.getElementById('discover-results');
         if (!resultsEl) return;
 
@@ -1058,57 +1056,25 @@ const Pages = {
 
         const query = window._discoverQuery;
         if (query && query.length >= 2) {
-            // Re-search with new filters
-            window._discoverPage = 1;
-            this._discoverSearch(query, 1, false);
+            this._discoverSearch(query);
             return;
         }
 
-        // Re-filter/sort stored popular people
-        let people = this._filterPeople(window._discoverRawPeople || []);
-        people = this._sortPeople(people);
-        window._discoverAllPeople = people;
-        resultsEl.innerHTML = this._renderDiscoverGrid(people);
-
+        // Re-filter/sort all 5,000 people locally — instant
         const raw = window._discoverRawPeople || [];
+        let people = this._filterPeople(raw);
+        people = this._sortPeople(people);
+        window._discoverFilteredPeople = people;
+        window._discoverDisplayCount = this._DISCOVER_PAGE_SIZE;
+
+        const showing = people.slice(0, this._DISCOVER_PAGE_SIZE);
+        window._discoverAllPeople = showing;
+        resultsEl.innerHTML = this._renderDiscoverGrid(showing);
+
         const statusEl = document.getElementById('discover-status');
-        if (statusEl) statusEl.textContent = `Showing ${people.length} professionals from ${raw.length} loaded. Search to find anyone.`;
-
-        // Auto-fetch more if filters leave too few results and we have any active filter
-        const hasFilter = (window._discoverDept || window._discoverGender !== 'all' || window._discoverGenre !== 'all' || window._discoverMedia !== 'all' || window._discoverTier !== 'all');
-        if (hasFilter && people.length < 40 && !window._discoverAutoLoading) {
-            window._discoverAutoLoading = true;
-            if (statusEl) statusEl.textContent = `Showing ${people.length} results — loading more...`;
-            await this._discoverExpandPool();
-            window._discoverAutoLoading = false;
-
-            // Re-filter with expanded pool
-            people = this._filterPeople(window._discoverRawPeople || []);
-            people = this._sortPeople(people);
-            window._discoverAllPeople = people;
-            resultsEl.innerHTML = this._renderDiscoverGrid(people);
-            const newRaw = window._discoverRawPeople || [];
-            if (statusEl) statusEl.textContent = `Showing ${people.length} professionals from ${newRaw.length} loaded. Search to find anyone.`;
-        }
-    },
-
-    // Fetch more popular pages to expand the pool for filtering
-    async _discoverExpandPool() {
-        const currentPage = window._discoverPopularPage || 15;
-        const maxPage = Math.min(currentPage + 20, 500); // Fetch up to 20 more pages (400 more people)
-        const fetches = [];
-        for (let i = currentPage + 1; i <= maxPage; i++) fetches.push(API.getPopularPeople(i));
-
-        try {
-            const pages = await Promise.all(fetches);
-            let newPeople = pages.flatMap(p => p.results || []);
-            const existing = new Set((window._discoverRawPeople || []).map(p => p.id));
-            newPeople = newPeople.filter(p => !existing.has(p.id));
-            window._discoverRawPeople = [...(window._discoverRawPeople || []), ...newPeople];
-            window._discoverPopularPage = maxPage;
-        } catch (e) {
-            console.warn('Failed to expand pool:', e);
-        }
+        if (statusEl) statusEl.textContent = `Showing ${showing.length} of ${people.length} professionals from ${raw.length} in database.`;
+        const loadMoreBtn = document.getElementById('discover-load-more');
+        if (loadMoreBtn) loadMoreBtn.style.display = people.length > this._DISCOVER_PAGE_SIZE ? 'block' : 'none';
     },
 
     // ==========================================
@@ -1787,7 +1753,7 @@ Pages._afterRender = {
 
     // Discover page: search, filter, paginate
     discover: () => {
-        // Load initial popular people
+        // Load local index (5,000 people)
         Pages._discoverLoadInitial();
 
         const input = document.getElementById('discover-search-input');
@@ -1798,14 +1764,11 @@ Pages._afterRender = {
             debounce = setTimeout(() => {
                 const query = input.value.trim();
                 window._discoverQuery = query;
-                window._discoverPage = 1;
-                window._discoverHasMore = true;
 
                 if (query.length < 2) {
-                    // Reset to popular people
-                    Pages._discoverLoadInitial();
+                    Pages._discoverReapplyFilters();
                 } else {
-                    Pages._discoverSearch(query, 1, false);
+                    Pages._discoverSearch(query);
                 }
             }, 300);
         });
