@@ -3401,11 +3401,6 @@ p {
     padding-right: var(--spacing-md);
   }
 
-  /* Department grid */
-  .department-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   /* Profile mobile */
   .profile-header {
     flex-direction: column;
@@ -3455,11 +3450,55 @@ p {
 
 .department-icon {
   font-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.department-icon svg {
+  width: 36px;
+  height: 36px;
+  stroke: var(--text-secondary);
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.7;
+  transition: opacity 0.2s, stroke 0.2s;
+}
+
+.department-card:hover .department-icon svg {
+  stroke: var(--brand-accent);
+  opacity: 1;
 }
 
 .department-name {
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .department-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--spacing-sm);
+  }
+  .department-card {
+    padding: var(--spacing-md) var(--spacing-sm);
+  }
+  .department-icon svg {
+    width: 28px;
+    height: 28px;
+  }
+  .department-name {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .department-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-sm);
+  }
 }
 
 /* Profile subsection & meta */

@@ -68,14 +68,14 @@ const Pages = {
         }
 
         const departments = [
-            { name: 'Acting', icon: '🎭', slug: 'acting' },
-            { name: 'Directing', icon: '🎬', slug: 'directing' },
-            { name: 'Writing', icon: '✍️', slug: 'writing' },
-            { name: 'Production', icon: '🎥', slug: 'production' },
-            { name: 'Music', icon: '🎵', slug: 'sound' },
-            { name: 'Cinematography', icon: '📷', slug: 'camera' },
-            { name: 'Art & Design', icon: '🎨', slug: 'art' },
-            { name: 'Editing', icon: '✂️', slug: 'editing' },
+            { name: 'Acting', icon: '<svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><path d="M19 8v6M16 11h6"/></svg>', slug: 'acting' },
+            { name: 'Directing', icon: '<svg viewBox="0 0 24 24"><path d="M2 3h6l2 3h12v13H2z"/><circle cx="12" cy="13" r="3"/></svg>', slug: 'directing' },
+            { name: 'Writing', icon: '<svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>', slug: 'writing' },
+            { name: 'Production', icon: '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>', slug: 'production' },
+            { name: 'Music', icon: '<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>', slug: 'sound' },
+            { name: 'Cinema', icon: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/></svg>', slug: 'camera' },
+            { name: 'Art', icon: '<svg viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.04-.24-.3-.39-.65-.39-1.04 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-5.17-4.5-9-10-9z"/><circle cx="7.5" cy="11.5" r="1.5"/><circle cx="11" cy="7.5" r="1.5"/><circle cx="16.5" cy="11.5" r="1.5"/></svg>', slug: 'art' },
+            { name: 'Editing', icon: '<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M9 6h6l6 12"/><path d="M21 6l-6 12h-6"/></svg>', slug: 'editing' },
         ];
 
         return `
