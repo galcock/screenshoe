@@ -467,7 +467,7 @@ const Pages = {
         const tvCount = allCredits.filter(c => c.type === 'tv').length;
         const ratingsArr = allCredits.filter(c => c.vote_average && c.vote_average > 0).map(c => c.vote_average);
         const avgRating = ratingsArr.length > 0
-            ? (ratingsArr.reduce((sum, r) => sum + r, 0) / ratingsArr.length).toFixed(1)
+            ? Math.round((ratingsArr.reduce((sum, r) => sum + r, 0) / ratingsArr.length) * 10)
             : null;
 
         const bio = profileData?.customBio || person.biography || '';
@@ -541,8 +541,8 @@ const Pages = {
                                 </div>
                                 ${avgRating ? `
                                 <div class="person-stat-item">
-                                    <div class="person-stat-value">${avgRating}</div>
-                                    <div class="person-stat-label">Avg Rating</div>
+                                    <div class="person-stat-value">${avgRating}%</div>
+                                    <div class="person-stat-label">Avg Score</div>
                                 </div>
                                 ` : ''}
                             </div>
@@ -642,7 +642,7 @@ const Pages = {
             const href = `https://freshkernels.com/${type}/${slug}-${c.id}`;
             const posterUrl = API.posterUrl(c.poster_path, 'small');
             const year = c.date ? c.date.substring(0, 4) : '';
-            const rating = c.vote_average ? c.vote_average.toFixed(1) : '';
+            const rating = c.vote_average ? Math.round(c.vote_average * 10) + '%' : '';
             const roleDisplay = c.roleDetail || c.role || '';
 
             const posterHtml = posterUrl
@@ -656,7 +656,7 @@ const Pages = {
                     ${roleDisplay ? `<span class="filmography-item__role">${Components._esc(roleDisplay)}</span>` : ''}
                     <div class="filmography-item__meta">
                         ${year ? `<span class="filmography-item__year">${year}</span>` : ''}
-                        ${rating ? `<span class="filmography-item__rating">★ ${rating}</span>` : ''}
+                        ${rating ? `<span class="filmography-item__rating">${rating}</span>` : ''}
                     </div>
                 </div>
             </a>`;
@@ -863,7 +863,7 @@ const Pages = {
                 const tierInfo = this._getTierInfo(score);
                 return `<a href="${href}" class="discover-list-item" data-link>
                     <div class="discover-list-photo">
-                        ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy">` : `<div class="discover-list-placeholder">${(p.name || '?').charAt(0)}</div>`}
+                        ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy">` : `<div class="discover-list-placeholder">🎬</div>`}
                     </div>
                     <div class="discover-list-info">
                         <span class="discover-list-name">${p.name}</span>

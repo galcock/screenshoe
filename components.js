@@ -106,7 +106,7 @@ const Components = {
 
         const photoHtml = imgUrl
             ? `<img class="person-card__photo" src="${imgUrl}" alt="${this._esc(name)}" loading="lazy">`
-            : `<div class="person-card__photo person-card__photo--fallback">${initial}</div>`;
+            : `<div class="person-card__photo person-card__photo--fallback">🎬</div>`;
 
         const badgeHtml = verified ? ` ${this.verifiedBadge('sm')}` : '';
 
