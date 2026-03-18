@@ -753,9 +753,9 @@ const Pages = {
             );
         }
 
-        // Gender filter (for TMDB API results only — index doesn't have gender)
-        if (gender === 'female') filtered = filtered.filter(p => p._isIndex ? true : p.gender === 1);
-        else if (gender === 'male') filtered = filtered.filter(p => p._isIndex ? true : p.gender === 2);
+        // Gender filter (1=female, 2=male in TMDB)
+        if (gender === 'female') filtered = filtered.filter(p => p.gender === 1);
+        else if (gender === 'male') filtered = filtered.filter(p => p.gender === 2);
 
         // Genre filter
         if (genre !== 'all') {
@@ -818,6 +818,7 @@ const Pages = {
             name: p.n,
             profile_path: p.p || null,
             known_for_department: p.d || '',
+            gender: p.gn || 0,
             genre_ids: p.g || [],
             known_for_titles: p.k || [],
             media: p.m || 'both',

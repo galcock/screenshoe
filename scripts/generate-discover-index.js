@@ -116,11 +116,12 @@ function processFK(p) {
     const hasMovies = movieCredits.length > 0;
     const hasTV = tvCredits.length > 0;
 
-    return {
+    const entry = {
         i: p.id,
         n: p.name,
         p: p.profile_path || '',
         d: p.known_for_department || '',
+        gn: p.gender || 0,
         g: [...genreSet].filter(g => g in genreNames),
         k: knownFor,
         m: hasMovies && hasTV ? 'both' : hasMovies ? 'movie' : 'tv',
@@ -131,6 +132,8 @@ function processFK(p) {
         b: p.birthday || '',
         dd: p.deathday || '',
     };
+    if (!entry.gn) delete entry.gn; // save space
+    return entry;
 }
 
 // Process TMDB popular person into index entry
@@ -143,11 +146,12 @@ function processTMDB(p) {
     const hasMovies = (p.known_for || []).some(k => k.media_type === 'movie');
     const hasTV = (p.known_for || []).some(k => k.media_type === 'tv');
 
-    return {
+    const entry = {
         i: p.id,
         n: p.name,
         p: p.profile_path || '',
         d: p.known_for_department || '',
+        gn: p.gender || 0,
         g: [...genreSet].filter(g => g in genreNames),
         k: knownFor,
         m: hasMovies && hasTV ? 'both' : hasMovies ? 'movie' : 'tv',
@@ -158,6 +162,8 @@ function processTMDB(p) {
         b: '',
         dd: '',
     };
+    if (!entry.gn) delete entry.gn;
+    return entry;
 }
 
 // Process a crew member extracted from movie credits
@@ -190,11 +196,12 @@ function processCrewMember(personData, crewCredits) {
     const uniqueMovies = movieSet.size;
     const prominence = Math.round(uniqueMovies * (avgRating / 10) * 10) / 10;
 
-    return {
+    const entry = {
         i: personData.id,
         n: personData.name,
         p: personData.profile_path || '',
         d: normalizeDepartment(personData.department || crewCredits[0]?.department || ''),
+        gn: personData.gender || 0,
         g: [...genreSet].filter(g => g in genreNames),
         k: knownFor,
         m: 'movie',
@@ -205,6 +212,8 @@ function processCrewMember(personData, crewCredits) {
         b: personData.birthday || '',
         dd: personData.deathday || '',
     };
+    if (!entry.gn) delete entry.gn;
+    return entry;
 }
 
 async function fetchTMDBPopular(page) {
@@ -270,9 +279,11 @@ async function main() {
     const moviesToFetch = sortedMovies.slice(0, 2000);
     console.log(`\nPHASE 1: Fetching full crew from top ${moviesToFetch.length} movies...`);
 
-    // Collect crew members: personId → { id, name, profile_path, department, credits: [...] }
+    // Collect crew members: personId → { id, name, profile_path, gender, department, credits: [...] }
     const crewMap = new Map();
     const CREW_DEPTS = new Set(['Sound', 'Camera', 'Art', 'Editing', 'Visual Effects', 'Costume & Make-Up', 'Crew', 'Lighting']);
+    // Gender lookup: personId → gender (1=female, 2=male) — used to backfill FK people
+    const genderLookup = new Map();
 
     if (TMDB_TOKEN) {
         const BATCH_SIZE = 35; // Stay under TMDB's ~40 req/sec limit
@@ -290,6 +301,8 @@ async function main() {
 
                 // Process crew (not cast — cast is already well-covered)
                 (credits.crew || []).forEach(crew => {
+                    // Always capture gender for backfilling FK people
+                    if (crew.gender) genderLookup.set(crew.id, crew.gender);
                     const dept = normalizeDepartment(crew.department);
                     if (!CREW_DEPTS.has(dept)) return; // Only collect underrepresented depts
                     if (seenIds.has(crew.id)) return; // Already in FK index
@@ -299,6 +312,7 @@ async function main() {
                             id: crew.id,
                             name: crew.name,
                             profile_path: crew.profile_path || '',
+                            gender: crew.gender || 0,
                             department: dept,
                             credits: []
                         });
@@ -314,12 +328,15 @@ async function main() {
 
                 // Also collect cast we don't have yet
                 (credits.cast || []).forEach(cast => {
+                    // Always capture gender for backfilling FK people
+                    if (cast.gender) genderLookup.set(cast.id, cast.gender);
                     if (seenIds.has(cast.id)) return;
                     if (!crewMap.has(cast.id)) {
                         crewMap.set(cast.id, {
                             id: cast.id,
                             name: cast.name,
                             profile_path: cast.profile_path || '',
+                            gender: cast.gender || 0,
                             department: 'Acting',
                             credits: []
                         });
@@ -419,8 +436,25 @@ async function main() {
         console.log('Set TMDB_TOKEN env var or ensure api.js is accessible.');
     }
 
+    // Also capture gender from TMDB popular people
+    tmdbPeople.forEach(p => {
+        if (p.gender) genderLookup.set(p.id, p.gender);
+    });
+
     // Convert TMDB people to index format
     const tmdbIndex = tmdbPeople.map(processTMDB);
+
+    // ============================================================
+    // BACKFILL: Add gender to FK people from genderLookup
+    // ============================================================
+    let genderBackfilled = 0;
+    fkIndex.forEach(p => {
+        if (!p.gn && genderLookup.has(p.i)) {
+            p.gn = genderLookup.get(p.i);
+            genderBackfilled++;
+        }
+    });
+    console.log(`\nGender backfilled for ${genderBackfilled}/${fkIndex.length} FK people (lookup has ${genderLookup.size} entries)`);
 
     // ============================================================
     // MERGE: FK people first (richest data), then movie crew, then TMDB popular extras
