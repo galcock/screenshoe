@@ -189,7 +189,8 @@ const Pages = {
             'camera': 'Camera',
             'art': 'Art',
             'editing': 'Editing',
-            'visual-effects': 'Visual Effects',
+            'vfx': 'Visual Effects',
+            'costume': 'Costume & Make-Up',
         };
 
         const selectedDept = department ? (deptMap[department] || department) : null;
@@ -216,6 +217,12 @@ const Pages = {
             { slug: 'directing', label: 'Directing' },
             { slug: 'writing', label: 'Writing' },
             { slug: 'production', label: 'Production' },
+            { slug: 'camera', label: 'Cinematography' },
+            { slug: 'sound', label: 'Music & Sound' },
+            { slug: 'art', label: 'Art & Design' },
+            { slug: 'editing', label: 'Editing' },
+            { slug: 'vfx', label: 'Visual Effects' },
+            { slug: 'costume', label: 'Costume & Make-Up' },
         ];
 
         // Sort/view/filter options
@@ -727,7 +734,8 @@ const Pages = {
     _deptMap: {
         'acting': 'Acting', 'directing': 'Directing', 'writing': 'Writing',
         'production': 'Production', 'sound': 'Sound', 'camera': 'Camera',
-        'art': 'Art', 'editing': 'Editing'
+        'art': 'Art', 'editing': 'Editing', 'vfx': 'Visual Effects',
+        'costume': 'Costume & Make-Up', 'crew': 'Crew', 'lighting': 'Lighting'
     },
 
     _filterPeople(people) {
