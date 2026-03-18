@@ -915,7 +915,7 @@ const Pages = {
         try {
             // Load local index (5,000 people, ~1.2MB)
             if (!window._discoverIndex) {
-                const resp = await fetch('/data/discover-index.json');
+                const resp = await fetch('/data/discover-index.json?v=3');
                 window._discoverIndex = await resp.json();
                 window._discoverGenreNames = window._discoverIndex.genreNames || {};
                 // Normalize all people once
