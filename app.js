@@ -222,6 +222,11 @@ const Pages = {
             { slug: 'editing', label: 'Editing' },
         ];
 
+        // Sort/view options
+        window._discoverSort = 'popularity';
+        window._discoverGender = 'all';
+        window._discoverView = 'grid';
+
         return `
             <div class="container" style="padding-top:var(--spacing-2xl);padding-bottom:var(--spacing-3xl)">
                 <h1 class="page-title">Discover</h1>
@@ -239,6 +244,32 @@ const Pages = {
                             ${f.label}
                         </a>
                     `).join('')}
+                </div>
+
+                <div class="discover-toolbar">
+                    <div class="discover-toolbar-left">
+                        <div class="discover-sort">
+                            <label>Sort:</label>
+                            <select id="discover-sort-select" class="form-select" onchange="Pages._discoverSetSort(this.value)">
+                                <option value="popularity">Popularity</option>
+                                <option value="name-az">Name A→Z</option>
+                                <option value="name-za">Name Z→A</option>
+                            </select>
+                        </div>
+                        <div class="discover-gender-filter">
+                            <label>Gender:</label>
+                            <select id="discover-gender-select" class="form-select" onchange="Pages._discoverSetGender(this.value)">
+                                <option value="all">All</option>
+                                <option value="female">Female</option>
+                                <option value="male">Male</option>
+                                <option value="other">Non-Binary</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="discover-toolbar-right">
+                        <button class="discover-view-btn ${window._discoverView === 'grid' ? 'active' : ''}" onclick="Pages._discoverSetView('grid')" title="Grid view">⊞</button>
+                        <button class="discover-view-btn ${window._discoverView === 'list' ? 'active' : ''}" onclick="Pages._discoverSetView('list')" title="List view">☰</button>
+                    </div>
                 </div>
 
                 <div id="discover-results">
@@ -642,12 +673,56 @@ const Pages = {
         'art': 'Art', 'editing': 'Editing'
     },
 
-    _filterByDept(people) {
+    // TMDB gender codes: 0=not set, 1=female, 2=male, 3=non-binary
+    _filterPeople(people) {
+        let filtered = [...people];
         const dept = window._discoverDept;
-        if (!dept || !this._deptMap[dept]) return people;
-        return people.filter(p =>
-            p.known_for_department?.toLowerCase() === this._deptMap[dept].toLowerCase()
-        );
+        const gender = window._discoverGender || 'all';
+
+        if (dept && this._deptMap[dept]) {
+            filtered = filtered.filter(p =>
+                p.known_for_department?.toLowerCase() === this._deptMap[dept].toLowerCase()
+            );
+        }
+        if (gender === 'female') filtered = filtered.filter(p => p.gender === 1);
+        else if (gender === 'male') filtered = filtered.filter(p => p.gender === 2);
+        else if (gender === 'other') filtered = filtered.filter(p => p.gender === 3 || p.gender === 0);
+
+        return filtered;
+    },
+
+    _sortPeople(people) {
+        const sort = window._discoverSort || 'popularity';
+        const sorted = [...people];
+        if (sort === 'name-az') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        else if (sort === 'name-za') sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+        else sorted.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        return sorted;
+    },
+
+    _renderDiscoverGrid(people) {
+        const view = window._discoverView || 'grid';
+        if (people.length === 0) return Components.emptyState('🔍', 'No results', 'Try a different search, department, or filter.');
+        if (view === 'list') {
+            return `<div class="discover-list">${people.map(p => {
+                const photo = p.profile_path ? API.profileUrl(p.profile_path, 'medium') : '';
+                const dept = p.known_for_department || '';
+                const knownFor = (p.known_for || []).slice(0, 3).map(k => k.title || k.name).filter(Boolean).join(', ');
+                const href = API.getPersonUrl(p);
+                return `<a href="${href}" class="discover-list-item" data-link>
+                    <div class="discover-list-photo">
+                        ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy">` : `<div class="discover-list-placeholder">${(p.name || '?').charAt(0)}</div>`}
+                    </div>
+                    <div class="discover-list-info">
+                        <span class="discover-list-name">${p.name}</span>
+                        <span class="discover-list-dept">${dept}</span>
+                    </div>
+                    <div class="discover-list-known">${knownFor}</div>
+                    <div class="discover-list-pop">${Math.round(p.popularity || 0)}</div>
+                </a>`;
+            }).join('')}</div>`;
+        }
+        return `<div class="person-card-grid">${people.map(p => Components.personCard(p)).join('')}</div>`;
     },
 
     async _discoverLoadInitial() {
@@ -659,29 +734,24 @@ const Pages = {
         resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
 
         try {
-            // Fetch 5 pages of popular people (100 people)
-            const fetches = [];
-            for (let i = 1; i <= 5; i++) fetches.push(API.getPopularPeople(i));
+            const fetches = [API.getPopularPeople(1), API.getPopularPeople(2), API.getPopularPeople(3)];
             const pages = await Promise.all(fetches);
             let allPeople = pages.flatMap(p => p.results || []);
 
-            // Deduplicate
             const seen = new Set();
             allPeople = allPeople.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
 
-            // Filter by department
-            let people = this._filterByDept(allPeople);
+            // Store raw, then filter/sort for display
+            window._discoverRawPeople = allPeople;
+            window._discoverPopularPage = 3;
 
-            // Store for load more
+            let people = this._filterPeople(allPeople);
+            people = this._sortPeople(people);
             window._discoverAllPeople = people;
-            window._discoverPopularPage = 5;
 
-            resultsEl.innerHTML = people.length > 0
-                ? `<div class="person-card-grid">${people.map(p => Components.personCard(p)).join('')}</div>`
-                : Components.emptyState('🔍', 'No results', 'Try searching above or selecting a different department.');
-
-            if (statusEl) statusEl.textContent = `Showing ${people.length} popular ${this._deptMap[window._discoverDept] || ''} professionals. Search above to find anyone from TMDB's database of 3M+ people.`;
-            if (loadMoreBtn) loadMoreBtn.style.display = people.length >= 10 ? 'block' : 'none';
+            resultsEl.innerHTML = this._renderDiscoverGrid(people);
+            if (statusEl) statusEl.textContent = `Showing ${people.length} popular ${this._deptMap[window._discoverDept] || ''} professionals. Search to find anyone from 3M+ people.`;
+            if (loadMoreBtn) loadMoreBtn.style.display = 'block';
         } catch (e) {
             resultsEl.innerHTML = Components.emptyState('⚠️', 'Failed to load', 'Please refresh and try again.');
         }
@@ -695,12 +765,9 @@ const Pages = {
         if (window._discoverLoading) return;
         window._discoverLoading = true;
 
-        if (!append) {
-            resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
-        }
+        if (!append) resultsEl.innerHTML = '<div class="spinner" style="margin:2rem auto"></div>';
 
         try {
-            // Fetch 3 pages at once to get more results
             const fetches = [];
             for (let i = page; i < page + 3; i++) fetches.push(API.searchPeople(query, i));
             const pages = await Promise.all(fetches);
@@ -708,25 +775,26 @@ const Pages = {
             const totalResults = pages[0]?.total_results || 0;
             const totalPages = pages[0]?.total_pages || 0;
 
-            // Deduplicate
             const seen = new Set();
             results = results.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
 
-            // Filter by department if active
-            results = this._filterByDept(results);
+            // Apply filters & sort
+            results = this._filterPeople(results);
+            results = this._sortPeople(results);
 
             window._discoverPage = page + 3;
             window._discoverHasMore = (page + 3) <= totalPages;
 
             if (append) {
-                const grid = resultsEl.querySelector('.person-card-grid');
+                const grid = resultsEl.querySelector('.person-card-grid, .discover-list');
                 if (grid) {
-                    grid.insertAdjacentHTML('beforeend', results.map(p => Components.personCard(p)).join(''));
+                    // Re-render all for consistent sort in list view
+                    window._discoverAllPeople = [...(window._discoverAllPeople || []), ...results];
+                    grid.insertAdjacentHTML('beforeend', this._renderDiscoverGrid(results).replace(/<div class="(person-card-grid|discover-list)">|<\/div>$/g, ''));
                 }
             } else {
-                resultsEl.innerHTML = results.length > 0
-                    ? `<div class="person-card-grid">${results.map(p => Components.personCard(p)).join('')}</div>`
-                    : Components.emptyState('🔍', 'No results', `No ${this._deptMap[window._discoverDept] || ''} professionals found for "${query}". Try a different name or department.`);
+                window._discoverAllPeople = results;
+                resultsEl.innerHTML = this._renderDiscoverGrid(results);
             }
 
             const deptLabel = this._deptMap[window._discoverDept] || '';
@@ -745,7 +813,6 @@ const Pages = {
         if (query && query.length >= 2) {
             this._discoverSearch(query, window._discoverPage, true);
         } else {
-            // Load more popular people
             this._discoverLoadMorePopular();
         }
     },
@@ -756,32 +823,72 @@ const Pages = {
         if (!resultsEl || window._discoverLoading) return;
         window._discoverLoading = true;
 
-        const nextPage = (window._discoverPopularPage || 5) + 1;
+        const nextPage = (window._discoverPopularPage || 3) + 1;
         try {
             const fetches = [];
-            for (let i = nextPage; i < nextPage + 5; i++) fetches.push(API.getPopularPeople(i));
+            for (let i = nextPage; i < nextPage + 3; i++) fetches.push(API.getPopularPeople(i));
             const pages = await Promise.all(fetches);
             let newPeople = pages.flatMap(p => p.results || []);
 
-            const existing = new Set((window._discoverAllPeople || []).map(p => p.id));
+            const existing = new Set((window._discoverRawPeople || []).map(p => p.id));
             newPeople = newPeople.filter(p => !existing.has(p.id));
-            newPeople = this._filterByDept(newPeople);
+            window._discoverRawPeople = [...(window._discoverRawPeople || []), ...newPeople];
+            window._discoverPopularPage = nextPage + 2;
 
-            window._discoverPopularPage = nextPage + 4;
-            window._discoverAllPeople = [...(window._discoverAllPeople || []), ...newPeople];
+            let filtered = this._filterPeople(newPeople);
+            filtered = this._sortPeople(filtered);
+            window._discoverAllPeople = [...(window._discoverAllPeople || []), ...filtered];
 
-            const grid = resultsEl.querySelector('.person-card-grid');
-            if (grid && newPeople.length > 0) {
-                grid.insertAdjacentHTML('beforeend', newPeople.map(p => Components.personCard(p)).join(''));
+            const grid = resultsEl.querySelector('.person-card-grid, .discover-list');
+            if (grid && filtered.length > 0) {
+                grid.insertAdjacentHTML('beforeend', this._renderDiscoverGrid(filtered).replace(/<div class="(person-card-grid|discover-list)">|<\/div>$/g, ''));
             }
 
             const statusEl = document.getElementById('discover-status');
-            if (statusEl) statusEl.textContent = `Showing ${window._discoverAllPeople.length} professionals. Search above to find anyone.`;
-            if (loadMoreBtn) loadMoreBtn.style.display = newPeople.length > 0 ? 'block' : 'none';
+            if (statusEl) statusEl.textContent = `Showing ${(window._discoverAllPeople || []).length} professionals. Search to find anyone.`;
+            if (loadMoreBtn) loadMoreBtn.style.display = filtered.length > 0 ? 'block' : 'none';
         } catch (e) {
             console.warn('Failed to load more:', e);
         }
         window._discoverLoading = false;
+    },
+
+    _discoverSetSort(value) {
+        window._discoverSort = value;
+        this._discoverReapplyFilters();
+    },
+
+    _discoverSetGender(value) {
+        window._discoverGender = value;
+        this._discoverReapplyFilters();
+    },
+
+    _discoverSetView(view) {
+        window._discoverView = view;
+        document.querySelectorAll('.discover-view-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === (view === 'grid' ? '⊞' : '☰')));
+        this._discoverReapplyFilters();
+    },
+
+    _discoverReapplyFilters() {
+        const resultsEl = document.getElementById('discover-results');
+        if (!resultsEl) return;
+
+        const query = window._discoverQuery;
+        if (query && query.length >= 2) {
+            // Re-search with new filters
+            window._discoverPage = 1;
+            this._discoverSearch(query, 1, false);
+            return;
+        }
+
+        // Re-filter/sort stored popular people
+        let people = this._filterPeople(window._discoverRawPeople || []);
+        people = this._sortPeople(people);
+        window._discoverAllPeople = people;
+        resultsEl.innerHTML = this._renderDiscoverGrid(people);
+
+        const statusEl = document.getElementById('discover-status');
+        if (statusEl) statusEl.textContent = `Showing ${people.length} professionals. Search to find anyone.`;
     },
 
     // ==========================================
